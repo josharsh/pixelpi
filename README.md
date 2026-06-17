@@ -15,6 +15,8 @@
 npm i -g pixelpi
 ```
 
+<img src="https://raw.githubusercontent.com/josharsh/pixelpi/main/assets/pixelpi.gif" alt="pixelpi driving a real browser from the terminal" width="760" />
+
 </div>
 
 > `pixelpi "find the top story on Hacker News"` — the agent opens a real Chrome, looks once, reports the title in a few steps. No Playwright, no vision model, no cloud.
