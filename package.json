@@ -12,6 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "pixelpi": "tsx packages/agent/src/cli.ts",
+    "bench:tokens": "tsx bench/efficiency.ts",
+    "bench:tasks": "tsx bench/tasks.ts",
     "release": "pnpm -r build && pnpm -r publish --access public --no-git-checks",
     "check:publish": "pnpm -r --filter './packages/*' exec publint"
   },

@@ -21,7 +21,7 @@ npm i -g pixelpi
 
 > `pixelpi "find the top story on Hacker News"` — the agent opens a real Chrome, looks once, reports the title in a few steps. No Playwright, no vision model, no cloud.
 
-Every other browser agent buries the model under a 20–30-tool MCP surface and a raw-DOM firehose. pixelpi gives it **six primitives** and a bounded view of the page — `look()` is **107× cheaper** than a raw-DOM dump on a heavy site, and stays flat as the page grows. The model already knows how to use a browser; pixelpi just hands it one.
+Every other browser agent buries the model under a 20–30-tool MCP surface and a raw-DOM firehose. pixelpi gives it **six primitives** and a bounded view of the page — `look()` runs **~37× smaller in tokens** than a raw-DOM dump (median across 15 real sites; up to ~100× on heavy pages) and stays bounded as the page grows. The model already knows how to use a browser; pixelpi just hands it one.
 
 If pixelpi saves you a 30-tool MCP install, a star helps others find it.
 
@@ -67,15 +67,17 @@ Elements are addressed by **stable ref** (not CSS/coordinates) — cheap, determ
 | Substrate | **raw CDP** (no Playwright) | Playwright | CDP |
 | Self-extension | agent writes JS skills at runtime | — | — |
 
-**Validated token cost** (`look()` vs naive raw-DOM dump, measured live):
+**Token cost** — `look()` vs a raw-DOM dump, measured across the 15 sites [WebVoyager](https://github.com/MinorJerry/WebVoyager) tests on (full table + script in [`bench/`](./bench)):
 
 | Site | `look()` | raw DOM | factor |
 |---|---|---|---|
-| stripe.com | 1,667 tok | 177,826 tok | **107× cheaper** |
-| react.dev | 2,421 tok | 68,130 tok | **28× cheaper** |
-| news.ycombinator.com | 1,837 tok | 8,612 tok | 4.7× |
+| Coursera | 1,997 tok | 202,892 tok | **101.6×** |
+| GitHub | 1,955 tok | 146,787 tok | **75.1×** |
+| Apple | 2,254 tok | 96,507 tok | **42.8×** |
+| Hugging Face | 1,932 tok | 45,300 tok | **23.4×** |
+| ArXiv | 1,588 tok | 10,652 tok | **6.7×** |
 
-`look()` output is **bounded** (a hard ref cap) while raw DOM scales with page weight — so the heavier the site, the bigger the win.
+Median **37× fewer tokens** across the sites that load — `look()` holds ~2k tokens whatever the page weighs, while the raw DOM keeps growing. Five of the twelve bot-block headless Chrome and return an empty page; [`bench/`](./bench) has the full run. Reproduce it yourself: `pnpm bench:tokens`, no key needed.
 
 ## SDK usage
 
