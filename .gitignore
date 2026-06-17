@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.env
+.pixelpi-profile/
+.pixelpi-store.json
+.glass-store.json
+coverage/
+*.tsbuildinfo
+
+# Local agent/editor state — not part of the public project
+.claude/
+
+# Landing page — deployed separately, not part of the package repo
+website/
