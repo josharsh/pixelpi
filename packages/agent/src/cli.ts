@@ -5,6 +5,7 @@ import type { AgentEvent } from "@josharsh/pixelpi-core";
 import { createPixelpiSession } from "./session";
 import { ensureConfigured, runOnboarding } from "./onboarding";
 import { renderEvent, setColorEnabled } from "./render";
+import { renderMarkdown } from "./markdown";
 import { startRepl } from "./repl";
 
 const VERSION = "0.1.0";
@@ -153,7 +154,8 @@ async function main(): Promise<void> {
     try {
       const result = await session.send(task, ac.signal);
       if (!flags.json) {
-        stdout.write("\n" + "─".repeat(40) + "\n" + (result.finalText || "(no final text)") + "\n");
+        const body = result.finalText ? renderMarkdown(result.finalText, { color: useColor }) : "(no final text)";
+        stdout.write("\n" + "─".repeat(40) + "\n" + body + "\n");
       }
       process.exitCode = result.stopReason === "error" ? 1 : 0;
     } catch (err) {

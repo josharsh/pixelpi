@@ -1,5 +1,6 @@
 import type { AgentEvent } from "@josharsh/pixelpi-core";
 import type { Snapshot, SnapshotDelta } from "@josharsh/pixelpi-cdp";
+import { renderMarkdown } from "./markdown";
 
 const C = {
   reset: "\x1b[0m",
@@ -55,7 +56,7 @@ export function renderEvent(e: AgentEvent): void {
     case "assistant_message": {
       for (const block of e.content) {
         if (block.type === "text" && block.text.trim()) {
-          console.log(color(C.cyan, truncate(block.text, 400)));
+          console.log(renderMarkdown(block.text, { color: useColor }));
         }
       }
       break;
