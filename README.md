@@ -2,7 +2,7 @@
 
 # pixelpi
 
-**A minimal browser-agent harness — six tools, raw CDP, any model.**
+**A minimal browser-agent harness. Six tools, raw CDP, any model.**
 
 *The page is the prompt.*
 
@@ -19,9 +19,9 @@ npm i -g pixelpi
 
 </div>
 
-> `pixelpi "find the top story on Hacker News"` — the agent opens a real Chrome, looks once, reports the title in a few steps. No Playwright, no vision model, no cloud.
+> `pixelpi "find the top story on Hacker News"`: the agent opens a real Chrome, looks once, and reports the title in a few steps. No Playwright, no vision model, no cloud.
 
-Every other browser agent buries the model under a 20–30-tool MCP surface and a raw-DOM firehose. pixelpi gives it **six primitives** and a bounded view of the page — `look()` runs **~37× smaller in tokens** than a raw-DOM dump (median across 15 real sites; up to ~100× on heavy pages) and stays bounded as the page grows. The model already knows how to use a browser; pixelpi just hands it one.
+Every other browser agent buries the model under a 20–30-tool MCP surface and a raw-DOM firehose. pixelpi gives it **six primitives** and a bounded view of the page. A heavy page that costs ~180k tokens as raw DOM, pixelpi hands the model in ~2k. That's **37× to 100× fewer tokens** across real sites, and it stays flat as the page grows. The model already knows how to use a browser; pixelpi just gets out of the way.
 
 If pixelpi saves you a 30-tool MCP install, a star helps others find it.
 
@@ -48,14 +48,14 @@ First run with no config drops you into guided setup (provider · key · model),
 look · act · fill · nav · eval · store
 ```
 
-- **`look(mode?, filter?)`** — compact, ref-indexed accessibility/DOM snapshot. The `read`.
-- **`act(ref, op, value?)`** — mutate the page by stable ref via trusted CDP input events. The `write`/`edit`.
-- **`fill(fields[])`** — batched form fill in one call.
-- **`nav(action, arg?)`** — navigate, tabs, `waitfor`. The `cd` / processes.
-- **`eval(fn, args?, opts?)`** — arbitrary JS in the page realm. The escape hatch — the `bash` of the browser.
-- **`store(action, key?, value?)`** — durable host-side JSON KV. The filesystem.
+- **`look(mode?, filter?)`**: compact, ref-indexed accessibility/DOM snapshot. The `read`.
+- **`act(ref, op, value?)`**: mutate the page by stable ref via trusted CDP input events. The `write`/`edit`.
+- **`fill(fields[])`**: batched form fill in one call.
+- **`nav(action, arg?)`**: navigate, tabs, `waitfor`. The `cd` / processes.
+- **`eval(fn, args?, opts?)`**: arbitrary JS in the page realm. The escape hatch, the `bash` of the browser.
+- **`store(action, key?, value?)`**: durable host-side JSON KV. The filesystem.
 
-Elements are addressed by **stable ref** (not CSS/coordinates) — cheap, deterministic, resilient to layout churn. Everything else is composable from `eval`; the agent writes its own higher-level tools as JSON skills at runtime, and only each skill's one-line description enters the prompt.
+Elements are addressed by **stable ref** (not CSS/coordinates): cheap, deterministic, resilient to layout churn. Everything else is composable from `eval`; the agent writes its own higher-level tools as JSON skills at runtime, and only each skill's one-line description enters the prompt.
 
 ## Why it's different
 
@@ -65,9 +65,9 @@ Elements are addressed by **stable ref** (not CSS/coordinates) — cheap, determ
 | Tool-def + prompt tokens | **~1,055** | ~13,700 | ~18,000 |
 | Page representation | a11y tree (bounded) | mixed | mixed |
 | Substrate | **raw CDP** (no Playwright) | Playwright | CDP |
-| Self-extension | agent writes JS skills at runtime | — | — |
+| Self-extension | agent writes JS skills at runtime | no | no |
 
-**Token cost** — `look()` vs a raw-DOM dump, measured across the 15 sites [WebVoyager](https://github.com/MinorJerry/WebVoyager) tests on (full table + script in [`bench/`](./bench)):
+**Token cost:** `look()` vs a raw-DOM dump, measured across the 15 sites [WebVoyager](https://github.com/MinorJerry/WebVoyager) tests on (full table + script in [`bench/`](./bench)):
 
 | Site | `look()` | raw DOM | factor |
 |---|---|---|---|
@@ -77,7 +77,7 @@ Elements are addressed by **stable ref** (not CSS/coordinates) — cheap, determ
 | Hugging Face | 1,932 tok | 45,300 tok | **23.4×** |
 | ArXiv | 1,588 tok | 10,652 tok | **6.7×** |
 
-Median **37× fewer tokens** across the sites that load — `look()` holds ~2k tokens whatever the page weighs, while the raw DOM keeps growing. Five of the twelve bot-block headless Chrome and return an empty page; [`bench/`](./bench) has the full run. Reproduce it yourself: `pnpm bench:tokens`, no key needed.
+**37× to 100× fewer tokens** across these sites (37× median). `look()` holds ~2k tokens whatever the page weighs, while the raw DOM keeps growing. Five of the twelve bot-block headless Chrome and return an empty page; [`bench/`](./bench) has the full run. Reproduce it yourself: `pnpm bench:tokens`, no key needed.
 
 ## SDK usage
 
@@ -117,7 +117,7 @@ More in [`examples/`](./examples).
 
 ## Philosophy
 
-The model is the harness now — so you expose the substrate's irreducible primitives and let the agent compose the rest. See [docs/how-it-works.md](./docs/how-it-works.md) for the moving parts (why six tools, why raw CDP, why no MCP).
+The model is the harness now, so you expose the substrate's irreducible primitives and let the agent compose the rest. See [docs/how-it-works.md](./docs/how-it-works.md) for the moving parts (why six tools, why raw CDP, why no MCP).
 
 ## Contributing
 
@@ -125,7 +125,7 @@ Issues and PRs welcome. Run `pnpm install && pnpm build && pnpm test` before ope
 
 ## Status
 
-Substrate (`look`/`eval`) is validated live against real sites. The agent loop, guards, stores, and provider adapters are unit-tested (74 tests, mock provider — no network in tests). The full LLM↔browser loop runs once you supply an API key. Requires Node ≥ 20 and Google Chrome.
+Substrate (`look`/`eval`) is validated live against real sites. The agent loop, guards, stores, and provider adapters are unit-tested (74 tests, mock provider, no network in tests). The full LLM↔browser loop runs once you supply an API key. Requires Node ≥ 20 and Google Chrome.
 
 ## License
 

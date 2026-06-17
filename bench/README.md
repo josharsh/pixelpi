@@ -1,8 +1,8 @@
 # bench
 
-The scripts behind the numbers in the README. Run them yourself.
+**37× to 100× fewer tokens than a raw-DOM browser agent**, across 15 popular sites. Coursera's front page is ~203k tokens of raw HTML; pixelpi shows the model ~2k. The table below is the full run from `efficiency.ts`. `tasks.ts` is a quick check that the lean view still completes real tasks. Both finish in about a minute. Run them yourself with `pnpm bench:tokens`.
 
-## Token cost — `efficiency.ts`
+## Token cost (`efficiency.ts`)
 
 How many tokens `look()` costs the model, versus dumping the raw DOM. Runs against 15 popular sites (the list is borrowed from [WebVoyager](https://github.com/MinorJerry/WebVoyager)). No API key needed.
 
@@ -25,9 +25,9 @@ Measured 2026-06-17, headless Chrome:
 
 Median 37×, mean 44× across the seven sites that loaded. `look()` holds around 2k tokens whatever the page weighs; the raw DOM just keeps growing.
 
-The other five (Amazon, Booking, ESPN, Allrecipes, Cambridge) served a near-empty page to headless Chrome — bot detection. pixelpi can't act on a page it can't see, and getting past that needs a real browser profile, which isn't built yet.
+The other five (Amazon, Booking, ESPN, Allrecipes, Cambridge) served a near-empty page to headless Chrome (bot detection). pixelpi can't act on a page it can't see, and getting past that needs a real browser profile, which isn't built yet.
 
-## Tasks — `tasks.ts`
+## Tasks (`tasks.ts`)
 
 Five retrieval tasks on accessible sites, checked against ground truth pulled from public APIs (HN, GitHub) and stable facts. Needs `ANTHROPIC_API_KEY`; costs a few cents.
 
@@ -45,4 +45,4 @@ Measured 2026-06-17, `claude-sonnet-4-6`:
 | Wikipedia: Apollo 11 year | ✅ | 2 | 7.3k |
 | GitHub: cli/cli latest release | ✅ | 2 | 6.9k |
 
-5/5, about 2¢ a task. These are easy single-page lookups, not multi-step flows — it shows the cost holds up on simple tasks, nothing more.
+5/5, about 2¢ a task. These are easy single-page lookups, not multi-step flows. It shows the cost holds up on simple tasks, nothing more.
