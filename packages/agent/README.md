@@ -82,7 +82,7 @@ Elements are addressed by **stable ref** (not CSS/coordinates): cheap, determini
 | Substrate | **raw CDP** (no Playwright) | Playwright | CDP |
 | Self-extension | agent writes JS skills at runtime | no | no |
 
-**Token cost:** `look()` vs a raw-DOM dump, measured across the 15 sites [WebVoyager](https://github.com/MinorJerry/WebVoyager) tests on (full table + script in [`bench/`](./bench)):
+**Token cost:** `look()` vs a raw-DOM dump, measured across the 15 sites [WebVoyager](https://github.com/MinorJerry/WebVoyager) tests on (full table + script in [`bench/`](https://github.com/josharsh/pixelpi/tree/main/bench)):
 
 | Site | `look()` | raw DOM | factor |
 |---|---|---|---|
@@ -92,7 +92,7 @@ Elements are addressed by **stable ref** (not CSS/coordinates): cheap, determini
 | Hugging Face | 1,932 tok | 45,300 tok | **23.4×** |
 | ArXiv | 1,588 tok | 10,652 tok | **6.7×** |
 
-**37× to 100× fewer tokens** across these sites (37× median). `look()` holds ~2k tokens whatever the page weighs, while the raw DOM keeps growing. Five of the twelve bot-block headless Chrome and return an empty page; [`bench/`](./bench) has the full run. Reproduce it yourself: `pnpm bench:tokens`, no key needed.
+**37× to 100× fewer tokens** across these sites (37× median). `look()` holds ~2k tokens whatever the page weighs, while the raw DOM keeps growing. Five of the twelve bot-block headless Chrome and return an empty page; [`bench/`](https://github.com/josharsh/pixelpi/tree/main/bench) has the full run. Reproduce it yourself: `pnpm bench:tokens`, no key needed.
 
 ## SDK usage
 
@@ -128,15 +128,15 @@ console.log((await evalJs.execute({ fn: "return document.title" }, ctx)).content
 await close();
 ```
 
-More in [`examples/`](./examples).
+More in [`examples/`](https://github.com/josharsh/pixelpi/tree/main/examples).
 
 ## Philosophy
 
-The model is the harness now, so you expose the substrate's irreducible primitives and let the agent compose the rest. See [docs/how-it-works.md](./docs/how-it-works.md) for the moving parts (why six tools, why raw CDP, why no MCP).
+The model is the harness now, so you expose the substrate's irreducible primitives and let the agent compose the rest. See [docs/how-it-works.md](https://github.com/josharsh/pixelpi/blob/main/docs/how-it-works.md) for the moving parts (why six tools, why raw CDP, why no MCP).
 
 ## Contributing
 
-Issues and PRs welcome. Run `pnpm install && pnpm build && pnpm test` before opening a PR. See [CONTRIBUTING.md](./CONTRIBUTING.md).
+Issues and PRs welcome. Run `pnpm install && pnpm build && pnpm test` before opening a PR. See [CONTRIBUTING.md](https://github.com/josharsh/pixelpi/blob/main/CONTRIBUTING.md).
 
 ## Status
 
