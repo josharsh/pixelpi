@@ -22,7 +22,7 @@
     "@josharsh/pixelpi-ai": "workspace:*",
     "@josharsh/pixelpi-cdp": "workspace:*",
     "@josharsh/pixelpi-core": "workspace:*",
-    "@types/node": "^22.19.21",
+    "@types/node": "^26.0.0",
     "pixelpi": "workspace:*",
     "publint": "^0.3.21",
     "tsup": "^8.5.1",
