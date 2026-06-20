@@ -96,4 +96,12 @@ describe("resolveSettings precedence", () => {
   it("picks the provider-appropriate default model when provider is switched by flag", () => {
     expect(resolveSettings({ provider: "openai" }, {}).model).toBe(DEFAULT_MODEL.openai);
   });
+
+  it("profileDir: flag beats config, config when no flag, undefined when neither", () => {
+    expect(resolveSettings({ profile: "/flag/profile" }, { profile: "/config/profile" }).profileDir).toBe(
+      "/flag/profile",
+    );
+    expect(resolveSettings({}, { profile: "/config/profile" }).profileDir).toBe("/config/profile");
+    expect(resolveSettings({}, {}).profileDir).toBeUndefined();
+  });
 });

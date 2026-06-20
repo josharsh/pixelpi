@@ -47,6 +47,7 @@ export function createPixelpiSession(init: PixelpiSessionInit): InteractiveSessi
   let model = init.settings.model;
   let apiKey = init.settings.apiKey;
   let headless = init.settings.headless;
+  const profileDir = init.settings.profileDir;
   let provider: LLMProvider = createProvider({
     provider: init.settings.provider,
     model,
@@ -62,7 +63,7 @@ export function createPixelpiSession(init: PixelpiSessionInit): InteractiveSessi
 
   async function ensureChrome(): Promise<void> {
     if (chrome) return;
-    const launched = await launchChrome({ headless });
+    const launched = await launchChrome({ headless, userDataDir: profileDir });
     chrome = { session: launched.session, close: launched.close };
     tools = createBrowserTools({ session: launched.session, store });
     system = buildSystemPrompt({ skillDescriptions: await readSkillDescriptions(store) });

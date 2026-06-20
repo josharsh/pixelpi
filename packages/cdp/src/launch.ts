@@ -1,11 +1,9 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { execSync, spawn, type ChildProcess } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CdpClient } from "./client";
 import type { CdpSession, LaunchOptions } from "./types";
-
-const DEFAULT_MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 interface VersionInfo {
   webSocketDebuggerUrl?: string;
@@ -53,6 +51,65 @@ function chromeLaunchError(err: NodeJS.ErrnoException, execPath: string): FatalE
   return e;
 }
 
+/** Find a usable Chrome/Chromium executable, or fail fast with an actionable error. */
+export function resolveChromePath(explicit?: string): string {
+  if (explicit) return explicit;
+  if (process.env.PIXELPI_CHROME) return process.env.PIXELPI_CHROME;
+
+  let candidates: string[] = [];
+  if (process.platform === "darwin") {
+    candidates = [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+      "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    ];
+  } else if (process.platform === "linux") {
+    candidates = [
+      "/usr/bin/google-chrome",
+      "/usr/bin/google-chrome-stable",
+      "/usr/bin/chromium",
+      "/usr/bin/chromium-browser",
+      "/snap/bin/chromium",
+    ];
+  } else if (process.platform === "win32") {
+    const bases = [
+      process.env.PROGRAMFILES,
+      process.env["PROGRAMFILES(X86)"],
+      process.env.LOCALAPPDATA,
+    ].filter(Boolean) as string[];
+    for (const b of bases) {
+      candidates.push(join(b, "Google", "Chrome", "Application", "chrome.exe"));
+      candidates.push(join(b, "Microsoft", "Edge", "Application", "msedge.exe"));
+    }
+  }
+
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+
+  // On linux, fall back to anything on PATH.
+  if (process.platform === "linux") {
+    for (const name of ["google-chrome-stable", "google-chrome", "chromium", "chromium-browser"]) {
+      try {
+        const found = execSync(`which ${name}`, { stdio: ["ignore", "pipe", "ignore"] })
+          .toString()
+          .trim();
+        if (found) return found;
+      } catch {
+        /* not on PATH — try next */
+      }
+    }
+  }
+
+  const e: FatalError = new Error(
+    "Couldn't find Chrome on this system. " +
+      "Install Google Chrome (https://www.google.com/chrome/) or set PIXELPI_CHROME=/path/to/chrome.",
+  );
+  e.fatal = true;
+  throw e;
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url} -> ${res.status}`);
@@ -84,7 +141,7 @@ async function resolvePageTarget(base: string, startUrl: string): Promise<Target
 export async function launchChrome(
   opts: LaunchOptions = {},
 ): Promise<{ client: CdpClient; session: CdpSession; close: () => Promise<void> }> {
-  const executablePath = opts.executablePath ?? process.env.PIXELPI_CHROME ?? DEFAULT_MAC_CHROME;
+  const executablePath = resolveChromePath(opts.executablePath);
   const userDataDir = opts.userDataDir ?? mkdtempSync(join(tmpdir(), "pixelpi-chrome-"));
   const port = opts.port ?? 0;
   const startUrl = opts.startUrl ?? "about:blank";
@@ -110,24 +167,35 @@ export async function launchChrome(
     if (spawnError) throw spawnError;
   };
 
-  let resolvedPort = port;
-  if (port === 0) {
-    resolvedPort = await poll(() => {
+  let client: CdpClient;
+  try {
+    let resolvedPort = port;
+    if (port === 0) {
+      resolvedPort = await poll(() => {
+        guard();
+        return Promise.resolve(readActivePort(userDataDir));
+      }, 15000);
+    }
+    const base = `http://127.0.0.1:${resolvedPort}`;
+    // Wait for the HTTP endpoint to be live.
+    await poll(() => {
       guard();
-      return Promise.resolve(readActivePort(userDataDir));
+      return fetchJson<VersionInfo>(`${base}/json/version`);
     }, 15000);
+    const target = await poll(() => resolvePageTarget(base, startUrl), 15000);
+    client = new CdpClient(target.webSocketDebuggerUrl);
+    await client.whenReady();
+  } catch (err) {
+    if (!proc.killed) proc.kill();
+    if (spawnError) throw spawnError;
+    const e: FatalError = new Error(
+      `Couldn't reach Chrome's debug port for profile ${userDataDir}. ` +
+        `Chrome is probably already open with this profile — quit that window and retry, ` +
+        `or use a fresh profile (omit --profile, or pass --profile=<a different dir>).`,
+    );
+    e.fatal = true;
+    throw e;
   }
-  const base = `http://127.0.0.1:${resolvedPort}`;
-
-  // Wait for the HTTP endpoint to be live.
-  await poll(() => {
-    guard();
-    return fetchJson<VersionInfo>(`${base}/json/version`);
-  }, 15000);
-  const target = await poll(() => resolvePageTarget(base, startUrl), 15000);
-
-  const client = new CdpClient(target.webSocketDebuggerUrl);
-  await client.whenReady();
 
   const close = async () => {
     client.close();

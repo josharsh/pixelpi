@@ -13,12 +13,17 @@ export const ENV_VAR: Record<ProviderKind, string> = {
   openai: "OPENAI_API_KEY",
 };
 
+/** Default persistent profile dir, used when `--profile` is passed with no value. */
+export const DEFAULT_PROFILE = join(homedir(), ".pixelpi", "profile");
+
 /** Persisted config (see ~/.config/pixelpi/config.json). All fields optional — defaults fill the gaps. */
 export interface PixelpiConfig {
   provider?: ProviderKind;
   model?: string;
   headless?: boolean;
   storePath?: string;
+  /** Persistent Chrome profile dir; omit for a fresh disposable profile each run. */
+  profile?: string;
   /** Stored in the 0600 config file for v1 (keychain is a documented later opt-in). */
   apiKey?: string;
 }
@@ -29,6 +34,7 @@ export interface SettingsFlags {
   model?: string;
   headless?: boolean;
   store?: string;
+  profile?: string;
 }
 
 export type KeySource = "env" | "config" | "none";
@@ -38,6 +44,8 @@ export interface ResolvedSettings {
   model: string;
   headless: boolean;
   storePath: string;
+  /** Persistent profile dir; undefined means a disposable profile. */
+  profileDir?: string;
   apiKey?: string;
   keySource: KeySource;
   /** The env var consulted for this provider (for /status + error messages). */
@@ -99,12 +107,14 @@ export function resolveSettings(flags: SettingsFlags, config: PixelpiConfig): Re
     flags.model ?? process.env.PIXELPI_MODEL ?? config.model ?? DEFAULT_MODEL[provider];
   const headless = flags.headless ?? config.headless ?? true;
   const storePath = flags.store ?? config.storePath ?? ".pixelpi-store.json";
+  const profileDir = flags.profile ?? config.profile;
   const cred = resolveCredential(provider, config);
   return {
     provider,
     model,
     headless,
     storePath,
+    profileDir,
     apiKey: cred.key,
     keySource: cred.source,
     envVar: cred.envVar,

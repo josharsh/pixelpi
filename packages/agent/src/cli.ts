@@ -1,22 +1,30 @@
 #!/usr/bin/env node
 import { stdin, stdout, stderr } from "node:process";
+import { mkdirSync } from "node:fs";
+import { createInterface } from "node:readline";
+import { launchChrome } from "@josharsh/pixelpi-cdp";
 import { PixelpiProviderError, type ProviderKind } from "@josharsh/pixelpi-ai";
 import type { AgentEvent } from "@josharsh/pixelpi-core";
 import { createPixelpiSession } from "./session";
+import { DEFAULT_PROFILE } from "./config";
 import { ensureConfigured, runOnboarding } from "./onboarding";
 import { renderEvent, setColorEnabled } from "./render";
 import { renderMarkdown } from "./markdown";
 import { startRepl } from "./repl";
+import pkg from "../package.json";
 
-const VERSION = "0.1.0";
+const VERSION = pkg.version;
 
 interface Flags {
   task: string;
   auth: boolean;
+  login: boolean;
   provider?: ProviderKind;
   model?: string;
   headless?: boolean;
   store?: string;
+  /** Persistent profile dir, or "" when --profile is present with no value (→ DEFAULT_PROFILE). */
+  profile?: string;
   maxSteps?: number;
   print: boolean;
   json: boolean;
@@ -30,6 +38,7 @@ function parseArgs(argv: string[]): Flags {
   const f: Flags = {
     task: "",
     auth: false,
+    login: false,
     print: false,
     json: false,
     noInput: false,
@@ -40,13 +49,16 @@ function parseArgs(argv: string[]): Flags {
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
+    if (a.startsWith("--profile=")) { f.profile = a.slice("--profile=".length); continue; }
     switch (a) {
       case "auth": positional.length === 0 ? (f.auth = true) : positional.push(a); break;
+      case "login": positional.length === 0 ? (f.login = true) : positional.push(a); break;
       case "-m": case "--model": f.model = argv[++i]; break;
       case "--provider": f.provider = argv[++i] as ProviderKind; break;
       case "--headless": f.headless = true; break;
       case "--no-headless": f.headless = false; break;
       case "--store": f.store = argv[++i]; break;
+      case "--profile": f.profile = ""; break; // bare flag → DEFAULT_PROFILE (use --profile=<dir> for a custom one)
       case "--max-steps": f.maxSteps = parseInt(argv[++i]!, 10); break;
       case "-p": case "--print": f.print = true; break;
       case "--json": f.json = true; f.print = true; break;
@@ -68,17 +80,22 @@ USAGE
   pixelpi "<task>"             run one task and exit
   echo "<task>" | pixelpi      run a piped task and exit
   pixelpi auth                 set up or change your API key / model
+  pixelpi login [url]          open a headed browser to sign in; saves the session
 
 EXAMPLES
   pixelpi "go to news.ycombinator.com and tell me the top story"
   pixelpi --no-headless "log into example.com and screenshot the dashboard"
   pixelpi --json "extract all prices on example.com/pricing" > events.ndjson
+  pixelpi login https://example.com   then: pixelpi --profile "do X while logged in"
 
 FLAGS
   -m, --model <id>      model (default: config or claude-sonnet-4-6)
       --provider <n>    anthropic | openai
       --no-headless     show the Chrome window
       --store <path>    durable JSON store (default: .pixelpi-store.json)
+      --profile         reuse the persistent profile at ~/.pixelpi/profile
+      --profile=<dir>   reuse a persistent profile at a custom dir
+                        (omit --profile entirely for a fresh disposable profile each run)
       --max-steps <n>   step circuit breaker (default: 50)
   -p, --print           one-shot mode (print and exit)
       --json            emit agent events as JSON lines (implies -p)
@@ -88,6 +105,12 @@ FLAGS
       --version         print version
 
 Config: ~/.config/pixelpi/config.json`;
+
+/** Map the --profile flag to a dir: a path → that path, "" (bare flag) → default, absent → disposable. */
+function resolveProfile(flag: string | undefined): string | undefined {
+  if (flag === undefined) return undefined;
+  return flag || DEFAULT_PROFILE;
+}
 
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
@@ -119,6 +142,26 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (flags.login) {
+    if (!interactive) {
+      stderr.write("✗ pixelpi login: needs an interactive terminal.\n");
+      process.exitCode = 2;
+      return;
+    }
+    const profileDir = resolveProfile(flags.profile) ?? DEFAULT_PROFILE;
+    mkdirSync(profileDir, { recursive: true });
+    const url = flags.task || "about:blank";
+    stdout.write(`Opening Chrome with profile ${profileDir} …\n`);
+    const chrome = await launchChrome({ headless: false, userDataDir: profileDir, startUrl: url });
+    stdout.write("Sign in to the sites you need, then press Enter here to save the session.\n");
+    const rl = createInterface({ input: stdin, output: stdout });
+    await new Promise<void>((resolve) => rl.question("", () => resolve()));
+    rl.close();
+    await chrome.close();
+    stdout.write(`Session saved to ${profileDir}\n`);
+    return;
+  }
+
   // A piped task (no TTY stdin) with no argv task → read the first line as the task.
   let task = flags.task;
   if (!task && !stdin.isTTY) {
@@ -129,7 +172,13 @@ async function main(): Promise<void> {
 
   // Ensure we have a usable key (onboards if interactive & unconfigured; throws in CI).
   const settings = await ensureConfigured(
-    { provider: flags.provider, model: flags.model, headless: flags.headless, store: flags.store },
+    {
+      provider: flags.provider,
+      model: flags.model,
+      headless: flags.headless,
+      store: flags.store,
+      profile: resolveProfile(flags.profile),
+    },
     interactive,
   );
 
