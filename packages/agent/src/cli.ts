@@ -11,6 +11,10 @@ import { ensureConfigured, runOnboarding } from "./onboarding";
 import { renderEvent, setColorEnabled } from "./render";
 import { renderMarkdown } from "./markdown";
 import { startRepl } from "./repl";
+import { createRecorder } from "./record";
+import { loadTrace, resolveTracePath, saveTrace, slugify } from "./trace";
+import { replayTrace, type ReplayStep } from "./replay";
+import { ENV_VAR, type ResolvedSettings } from "./config";
 import pkg from "../package.json";
 
 const VERSION = pkg.version;
@@ -26,6 +30,11 @@ interface Flags {
   /** Persistent profile dir, or "" when --profile is present with no value (→ DEFAULT_PROFILE). */
   profile?: string;
   maxSteps?: number;
+  /** Save a trace of this run: undefined = off, "" = auto-slug the task, or a name/path. */
+  record?: string;
+  heal: boolean;
+  /** Set when "replay" is the first positional; holds the trace name/path (or "" if none given). */
+  replay?: string;
   print: boolean;
   json: boolean;
   noInput: boolean;
@@ -39,6 +48,9 @@ function parseArgs(argv: string[]): Flags {
     task: "",
     auth: false,
     login: false,
+    record: undefined,
+    heal: false,
+    replay: undefined,
     print: false,
     json: false,
     noInput: false,
@@ -50,9 +62,22 @@ function parseArgs(argv: string[]): Flags {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a.startsWith("--profile=")) { f.profile = a.slice("--profile=".length); continue; }
+    if (a.startsWith("--record=")) { f.record = a.slice("--record=".length); continue; }
     switch (a) {
       case "auth": positional.length === 0 ? (f.auth = true) : positional.push(a); break;
       case "login": positional.length === 0 ? (f.login = true) : positional.push(a); break;
+      case "replay":
+        // The next token is the trace name only when it exists and is not another flag.
+        if (positional.length === 0 && f.replay === undefined) {
+          f.replay = i + 1 < argv.length && !argv[i + 1]!.startsWith("-") ? argv[++i]! : "";
+        } else positional.push(a);
+        break;
+      case "--record":
+        // Bare --record auto-slugs; a following token that is not another flag is the name.
+        if (i + 1 < argv.length && !argv[i + 1]!.startsWith("-")) f.record = argv[++i];
+        else f.record = "";
+        break;
+      case "--heal": f.heal = true; break;
       case "-m": case "--model": f.model = argv[++i]; break;
       case "--provider": f.provider = argv[++i] as ProviderKind; break;
       case "--headless": f.headless = true; break;
@@ -69,7 +94,7 @@ function parseArgs(argv: string[]): Flags {
       default: positional.push(a);
     }
   }
-  f.task = positional.join(" ").trim();
+  if (f.replay === undefined) f.task = positional.join(" ").trim();
   return f;
 }
 
@@ -81,6 +106,9 @@ USAGE
   echo "<task>" | pixelpi      run a piped task and exit
   pixelpi auth                 set up or change your API key / model
   pixelpi login [url]          open a headed browser to sign in; saves the session
+  pixelpi "<task>" --record [name]   run and save a trace (auto-name if omitted)
+  pixelpi replay <name|path>         replay a saved trace (free, no model)
+  pixelpi replay <name|path> --heal  replay with one-step self-healing on drift
 
 EXAMPLES
   pixelpi "go to news.ycombinator.com and tell me the top story"
@@ -97,6 +125,8 @@ FLAGS
       --profile=<dir>   reuse a persistent profile at a custom dir
                         (omit --profile entirely for a fresh disposable profile each run)
       --max-steps <n>   step circuit breaker (default: 50)
+      --record [name]   save trace of this run for replay (omit name to auto-slug)
+      --heal            on replay: self-heal one step at a time on drift
   -p, --print           one-shot mode (print and exit)
       --json            emit agent events as JSON lines (implies -p)
       --no-input        never prompt (CI)
@@ -110,6 +140,17 @@ Config: ~/.config/pixelpi/config.json`;
 function resolveProfile(flag: string | undefined): string | undefined {
   if (flag === undefined) return undefined;
   return flag || DEFAULT_PROFILE;
+}
+
+/** Print one compact progress line per replayed step (or NDJSON when --json). */
+function renderReplay(step: ReplayStep, json: boolean): void {
+  if (json) {
+    stdout.write(JSON.stringify(step) + "\n");
+    return;
+  }
+  const mark = step.status === "ok" ? "·" : step.status === "drift" ? "≠" : "✗";
+  const detail = step.detail ? ` - ${step.detail}` : "";
+  stdout.write(`${mark} ${step.label}${detail}\n`);
 }
 
 async function readStdin(): Promise<string> {
@@ -162,6 +203,75 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (flags.replay !== undefined) {
+    if (!flags.replay) {
+      stderr.write("✗ pixelpi replay: needs a trace name or path.\n");
+      process.exitCode = 2;
+      return;
+    }
+    const tracePath = resolveTracePath(flags.replay);
+    const trace = loadTrace(tracePath); // throws a clear error if missing/invalid/wrong version
+    // Strict replay needs NO key; only --heal (the micro-repair) requires one.
+    let settings: ResolvedSettings;
+    if (flags.heal) {
+      settings = await ensureConfigured(
+        {
+          provider: flags.provider,
+          model: flags.model,
+          headless: flags.headless,
+          store: flags.store,
+          profile: resolveProfile(flags.profile),
+        },
+        interactive,
+      );
+    } else {
+      const provider = flags.provider ?? "anthropic";
+      settings = {
+        provider,
+        model: flags.model ?? trace.model,
+        headless: flags.headless ?? true,
+        storePath: flags.store ?? ".pixelpi-store.json",
+        profileDir: resolveProfile(flags.profile),
+        keySource: "none",
+        envVar: ENV_VAR[provider],
+      };
+    }
+    const ac = new AbortController();
+    const onSig = () => ac.abort();
+    process.on("SIGINT", onSig);
+    const t0 = Date.now();
+    try {
+      const result = await replayTrace({
+        trace,
+        settings,
+        tracePath,
+        heal: flags.heal,
+        signal: ac.signal,
+        onStep: (s) => renderReplay(s, flags.json),
+      });
+      if (!flags.json) {
+        if (result.ok) {
+          const secs = ((Date.now() - t0) / 1000).toFixed(1);
+          stdout.write(`done in ${secs}s - 0 tokens\n`);
+        } else if (result.drift) {
+          stdout.write(`drift at step ${result.drift.step}: ${result.drift.reason}\n`);
+        }
+      }
+      process.exitCode = result.ok ? 0 : 3;
+    } catch (err) {
+      if (err instanceof Error && (err.name === "AbortError" || err.name === "APIUserAbortError")) {
+        stderr.write("\n⚠ cancelled\n");
+        process.exitCode = 130;
+      } else {
+        stderr.write("\n✗ " + (err instanceof Error ? err.message : String(err)) + "\n");
+        process.exitCode = 1;
+      }
+    } finally {
+      process.off("SIGINT", onSig);
+    }
+    return;
+  }
+
   // A piped task (no TTY stdin) with no argv task → read the first line as the task.
   let task = flags.task;
   if (!task && !stdin.isTTY) {
@@ -193,9 +303,16 @@ async function main(): Promise<void> {
       process.exitCode = 2;
       return;
     }
-    const onEvent: (e: AgentEvent) => void = flags.json
+    const base: (e: AgentEvent) => void = flags.json
       ? (e) => stdout.write(JSON.stringify(e) + "\n")
       : renderEvent;
+    const recorder = flags.record !== undefined ? createRecorder() : undefined;
+    const onEvent: (e: AgentEvent) => void = recorder
+      ? (e) => {
+          recorder.onEvent(e);
+          base(e);
+        }
+      : base;
     const session = createPixelpiSession({ settings, maxSteps: flags.maxSteps, onEvent });
     const ac = new AbortController();
     const onSig = () => ac.abort();
@@ -205,6 +322,24 @@ async function main(): Promise<void> {
       if (!flags.json) {
         const body = result.finalText ? renderMarkdown(result.finalText, { color: useColor }) : "(no final text)";
         stdout.write("\n" + "─".repeat(40) + "\n" + body + "\n");
+      }
+      if (recorder && flags.record !== undefined) {
+        if (result.stopReason === "done") {
+          const trace = recorder.build(task, settings.model);
+          if (trace.steps.length === 0) {
+            stdout.write("trace not saved (no actions to replay)\n");
+          } else {
+            const name = flags.record || slugify(task);
+            const tracePath = resolveTracePath(name, { forWrite: true });
+            saveTrace(tracePath, trace);
+            // Quote the name so the printed command is copy-pasteable when it contains whitespace.
+            const quoted = /\s/.test(name) ? JSON.stringify(name) : name;
+            stdout.write(`Saved trace to ${tracePath}\n`);
+            stdout.write(`replay free with: pixelpi replay ${quoted}\n`);
+          }
+        } else {
+          stdout.write("trace not saved (run did not complete)\n");
+        }
       }
       process.exitCode = result.stopReason === "error" ? 1 : 0;
     } catch (err) {
