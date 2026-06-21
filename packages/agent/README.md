@@ -57,6 +57,22 @@ pixelpi --profile "check my GitHub notifications"   # reuses the saved session, 
 
 pixelpi finds Chrome automatically on macOS, Linux, and Windows. Set `PIXELPI_CHROME=/path/to/chrome` to override.
 
+## Record and replay
+
+Save a solved run as a trace and replay it later with no model in the loop. The first run is the compile step; every replay is the binary: free, deterministic, and fast.
+
+```bash
+pixelpi "find the top story on Hacker News" --record hn-top   # solve once, save a trace
+pixelpi replay hn-top                                         # rerun it with no model, 0 tokens
+pixelpi replay hn-top --heal                                  # repair one step with the model if the page drifted
+```
+
+- Traces key on the accessibility role and name of each element, not CSS selectors or coordinates, so they survive most layout churn. A bare name lives in `~/.pixelpi/traces/`; pass a path (or a name ending in `.json`) to keep a trace inside a repo.
+- `--record` writes only when the run completes. Omit the name and it auto-slugs the task.
+- Strict `replay` needs no API key. On drift it stops and exits `3`, naming the step that no longer matches. `--heal` re-derives just that step with the model and rewrites the trace, so it self-corrects over time.
+
+Replay reproduces actions, not intent: it is for stable, repeated flows (a login, an export, a scrape). `--heal` is what reintroduces judgment when a page has genuinely changed.
+
 ## The six primitives
 
 ```
@@ -81,6 +97,7 @@ Elements are addressed by **stable ref** (not CSS/coordinates): cheap, determini
 | Page representation | a11y tree (bounded) | mixed | mixed |
 | Substrate | **raw CDP** (no Playwright) | Playwright | CDP |
 | Self-extension | agent writes JS skills at runtime | no | no |
+| Replay | record once, replay with **0 tokens** | no | no |
 
 **Token cost:** `look()` vs a raw-DOM dump, measured across the 15 sites [WebVoyager](https://github.com/MinorJerry/WebVoyager) tests on (full table + script in [`bench/`](https://github.com/josharsh/pixelpi/tree/main/bench)):
 
@@ -140,7 +157,7 @@ Issues and PRs welcome. Run `pnpm install && pnpm build && pnpm test` before ope
 
 ## Status
 
-Substrate (`look`/`eval`) is validated live against real sites. The agent loop, guards, stores, and provider adapters are unit-tested (84 tests, mock provider, no network in tests). The full LLM↔browser loop runs once you supply an API key. Requires Node ≥ 20 and Google Chrome (macOS, Linux, or Windows).
+Substrate (`look`/`eval`) is validated live against real sites. The agent loop, guards, stores, and provider adapters are unit-tested (117 tests, mock provider, no network in tests). The full LLM↔browser loop runs once you supply an API key. Requires Node ≥ 20 and Google Chrome (macOS, Linux, or Windows).
 
 ## License
 
