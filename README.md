@@ -157,7 +157,7 @@ Issues and PRs welcome. Run `pnpm install && pnpm build && pnpm test` before ope
 
 ## Status
 
-Substrate (`look`/`eval`) is validated live against real sites. The agent loop, guards, stores, and provider adapters are unit-tested (117 tests, mock provider, no network in tests). The full LLM↔browser loop runs once you supply an API key. Requires Node ≥ 20 and Google Chrome (macOS, Linux, or Windows).
+Substrate (`look`/`eval`) is validated live against real sites. The agent loop, guards, stores, and provider adapters are unit-tested (119 tests, mock provider, no network in tests). The full LLM↔browser loop runs once you supply an API key. Requires Node ≥ 20 and Google Chrome (macOS, Linux, or Windows).
 
 ## License
 

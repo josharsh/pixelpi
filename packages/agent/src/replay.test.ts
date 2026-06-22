@@ -49,6 +49,13 @@ vi.mock("@josharsh/pixelpi-ai", async (orig) => {
   return { ...actual, createProvider: vi.fn(() => ({})) };
 });
 
+// Spy saveTrace so the heal path does not write to disk; keep the rest of ./trace real.
+const saveTraceSpy = vi.fn();
+vi.mock("./trace", async (orig) => {
+  const actual = await orig<typeof import("./trace")>();
+  return { ...actual, saveTrace: (...a: unknown[]) => saveTraceSpy(...a) };
+});
+
 import { replayTrace } from "./replay";
 
 const settings: ResolvedSettings = {
@@ -69,6 +76,7 @@ beforeEach(() => {
   calls.length = 0;
   closeSpy.mockClear();
   runAgentSpy.mockReset();
+  saveTraceSpy.mockClear();
   pageRefs = [];
 });
 
@@ -114,6 +122,32 @@ describe("replayTrace strict", () => {
     expect(closeSpy).toHaveBeenCalledOnce();
   });
 
+  it("treats a fill with one unresolved field as drift (all-or-nothing)", async () => {
+    pageRefs = [ref(1, "textbox", "Email")]; // Password field is gone
+    const trace: Trace = {
+      version: 1,
+      task: "t",
+      model: "m",
+      createdAt: "now",
+      steps: [
+        {
+          tool: "fill",
+          fields: [
+            { target: { role: "textbox", name: "Email", ordinal: 0 }, value: "a@b" },
+            { target: { role: "textbox", name: "Password", ordinal: 0 }, value: "pw" },
+          ],
+        },
+      ],
+    };
+    const r = await replayTrace({ trace, settings, tracePath: "/tmp/x.json", heal: false });
+    expect(r.ok).toBe(false);
+    expect(r.drift).toMatchObject({ step: 0 });
+    expect(r.drift?.reason).toMatch(/Password/);
+    // the fill must not have run with a half-resolved field set
+    expect(calls.some((c) => c.name === "fill")).toBe(false);
+    expect(closeSpy).toHaveBeenCalledOnce();
+  });
+
   it("honors an already-aborted signal", async () => {
     const ac = new AbortController();
     ac.abort();
@@ -132,6 +166,43 @@ describe("replayTrace strict", () => {
 });
 
 describe("replayTrace heal", () => {
+  it("repairs a drifted step, rewrites the trace, and continues", async () => {
+    pageRefs = []; // the recorded "Old" button is gone -> step 0 drifts
+    // The micro-repair model performs one act; the recorder captures it via the act-note fallback.
+    runAgentSpy.mockImplementation(async (opts: { onEvent: (e: unknown) => void }) => {
+      opts.onEvent({ type: "tool_start", step: 1, toolUseId: "r1", name: "act", input: { ref: 9, op: "click" } });
+      opts.onEvent({
+        type: "tool_end",
+        step: 1,
+        toolUseId: "r1",
+        name: "act",
+        result: { content: 'click on [9] button "New"', observation: { refs: [] } },
+        ms: 1,
+      });
+      return { messages: [], stopReason: "done", steps: 1, usage: { inputTokens: 0, outputTokens: 0 }, finalText: "" };
+    });
+    const trace: Trace = {
+      version: 1,
+      task: "t",
+      model: "m",
+      createdAt: "now",
+      steps: [
+        { tool: "act", op: "click", target: { role: "button", name: "Old", ordinal: 0 } },
+        { tool: "eval", input: { fn: "return 1" } },
+      ],
+    };
+    const r = await replayTrace({ trace, settings, tracePath: "/tmp/x.json", heal: true });
+    expect(r.ok).toBe(true);
+    expect(r.steps[0]).toMatchObject({ status: "ok", detail: "healed" });
+    expect(runAgentSpy).toHaveBeenCalledOnce();
+    // the drifted step was rewritten in place with the new descriptor and persisted
+    expect(trace.steps[0]).toMatchObject({ tool: "act", target: { role: "button", name: "New" } });
+    expect(saveTraceSpy).toHaveBeenCalledOnce();
+    // replay continued past the healed step to the eval
+    expect(r.steps[1]).toMatchObject({ tool: "eval", status: "ok" });
+    expect(closeSpy).toHaveBeenCalledOnce();
+  });
+
   it("aborts immediately when a repair makes no progress and reports drift", async () => {
     pageRefs = [];
     // runAgent does nothing -> recorder captures no act/fill -> no progress
