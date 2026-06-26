@@ -56,12 +56,13 @@ const tree: AXNode[] = [
 ];
 
 describe("compactAxTree", () => {
-  const { refs, refMap, truncated } = compactAxTree(tree);
+  const { refs, refMap, truncated, truncatedCount } = compactAxTree(tree);
 
   it("keeps only interactive + named-role nodes that are not ignored and have a backend id", () => {
     expect(refs.map((r) => r.role)).toEqual(["button", "textbox", "checkbox", "heading"]);
     expect(refs.map((r) => r.name)).toEqual(["Sign in", "Email", "Remember me", "Welcome"]);
     expect(truncated).toBe(false);
+    expect(truncatedCount).toBe(0);
   });
 
   it("assigns sequential ref ids from 1", () => {
@@ -117,8 +118,9 @@ describe("compactAxTree truncation", () => {
         backendDOMNodeId: i + 1,
       }),
     );
-    const { refs, truncated } = compactAxTree(many);
+    const { refs, truncated, truncatedCount } = compactAxTree(many);
     expect(refs.length).toBe(200);
     expect(truncated).toBe(true);
+    expect(truncatedCount).toBe(50);
   });
 });

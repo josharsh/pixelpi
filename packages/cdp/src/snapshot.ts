@@ -88,6 +88,7 @@ export interface CompactionResult {
   /** ref id -> resolution info needed by act/fill. */
   refMap: Map<number, { backendDOMNodeId: number; role: string; name: string }>;
   truncated: boolean;
+  truncatedCount: number;
 }
 
 /**
@@ -100,6 +101,7 @@ export function compactAxTree(nodes: AXNode[]): CompactionResult {
   const refMap = new Map<number, { backendDOMNodeId: number; role: string; name: string }>();
   let counter = 0;
   let truncated = false;
+  let truncatedCount = 0;
 
   for (const node of nodes) {
     if (node.ignored) continue;
@@ -115,7 +117,8 @@ export function compactAxTree(nodes: AXNode[]): CompactionResult {
 
     if (refs.length >= MAX_REFS) {
       truncated = true;
-      break;
+      truncatedCount++;
+      continue;
     }
 
     const ref = ++counter;
@@ -124,7 +127,7 @@ export function compactAxTree(nodes: AXNode[]): CompactionResult {
     refMap.set(ref, { backendDOMNodeId: node.backendDOMNodeId, role, name });
   }
 
-  return { refs, refMap, truncated };
+  return { refs, refMap, truncated, truncatedCount };
 }
 
 /** Render refs as compact "[ref] role \"name\" (state)" lines. */
