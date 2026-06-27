@@ -116,6 +116,20 @@ describe("createRecorder", () => {
     expect(t.steps[0]).toMatchObject({ target: { role: "link", name: "Docs", ordinal: 0 } });
   });
 
+  it("sets output to the last eval step, or none when there is no eval", () => {
+    const r = createRecorder();
+    r.onEvent(start("n1", "nav", { action: "goto", arg: "https://x" }));
+    r.onEvent(end("n1", "nav", "navigated", deltaObs([])));
+    r.onEvent(start("e1", "eval", { fn: "return 1" }));
+    r.onEvent(end("e1", "eval", "1", { value: 1 }));
+    expect(r.build("task", "m").output).toEqual({ from: "eval", step: 1 });
+
+    const r2 = createRecorder();
+    r2.onEvent(start("n1", "nav", { action: "reload" }));
+    r2.onEvent(end("n1", "nav", "reloaded", deltaObs([])));
+    expect(r2.build("task", "m").output).toEqual({ from: "none" });
+  });
+
   it("captures final assistant text into result.finalText", () => {
     const r = createRecorder();
     r.onEvent({ type: "assistant_message", step: 1, content: [{ type: "text", text: "the answer is 42" }], usage: { inputTokens: 0, outputTokens: 0 } });

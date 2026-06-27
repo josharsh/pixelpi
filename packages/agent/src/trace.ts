@@ -20,13 +20,44 @@ export type TraceStep =
   | { tool: "eval"; input: { fn: string; args?: unknown[]; opts?: Record<string, unknown> } }
   | { tool: "store"; input: { action: "set" | "delete"; key: string; value?: unknown } };
 
+/** A named input to a parametrized trace. Set by templatizeFromExamples / the vars command. */
+export interface TraceParam {
+  name: string;
+  example: unknown;
+  required: boolean;
+}
+
+/** Where a run's per-row output comes from. eval -> a step's returned value; store -> a store key. */
+export interface OutputSpec {
+  from: "eval" | "store" | "none";
+  /** for from "eval": the step index whose returned value is the output. */
+  step?: number;
+  /** for from "store": the store key read at the end of the row. */
+  key?: string;
+}
+
 export interface Trace {
   version: number;
   task: string;
   model: string;
   createdAt: string;
   steps: TraceStep[];
+  params?: TraceParam[];
+  /** Explicit output source. Absent on old traces; defaultOutput() computes it on the fly. */
+  output?: OutputSpec;
   result?: { finalText?: string };
+}
+
+/** A trace's signature: what it is, what inputs it takes, what it returns. Machine + human facing. */
+export interface TraceDescription {
+  name: string;
+  task: string;
+  model: string;
+  createdAt: string;
+  version: number;
+  steps: number;
+  params: TraceParam[];
+  output: OutputSpec;
 }
 
 const TRACES_DIR = join(homedir(), ".pixelpi", "traces");
@@ -85,4 +116,28 @@ export function loadTrace(path: string): Trace {
 export function saveTrace(path: string, trace: Trace): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(trace, null, 2) + "\n", "utf8");
+}
+
+/** The default output source: the trace's stored output, else the LAST eval step, else none. */
+export function defaultOutput(trace: Trace): OutputSpec {
+  if (trace.output) return trace.output;
+  let last = -1;
+  trace.steps.forEach((s, i) => {
+    if (s.tool === "eval") last = i;
+  });
+  return last >= 0 ? { from: "eval", step: last } : { from: "none" };
+}
+
+/** Pure: a trace's signature (name, task, params, output). Shared by `describe`, the SDK, and docs. */
+export function describeTrace(trace: Trace, name: string): TraceDescription {
+  return {
+    name,
+    task: trace.task,
+    model: trace.model,
+    createdAt: trace.createdAt,
+    version: trace.version,
+    steps: trace.steps.length,
+    params: trace.params ?? [],
+    output: defaultOutput(trace),
+  };
 }

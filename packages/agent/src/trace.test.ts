@@ -2,7 +2,16 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
-import { slugify, resolveTracePath, loadTrace, saveTrace, VERSION, type Trace } from "./trace";
+import {
+  slugify,
+  resolveTracePath,
+  loadTrace,
+  saveTrace,
+  defaultOutput,
+  describeTrace,
+  VERSION,
+  type Trace,
+} from "./trace";
 
 describe("slugify", () => {
   it("lowercases, hyphenates, and strips junk", () => {
@@ -83,5 +92,74 @@ describe("saveTrace / loadTrace", () => {
     const path = join(dir, "old.json");
     writeFileSync(path, JSON.stringify({ ...trace, version: 999 }), "utf8");
     expect(() => loadTrace(path)).toThrow(/unsupported trace version/);
+  });
+});
+
+describe("defaultOutput", () => {
+  const base = { version: VERSION, task: "t", model: "m", createdAt: "now" };
+
+  it("points at the LAST eval step when there are several", () => {
+    const t: Trace = {
+      ...base,
+      steps: [
+        { tool: "eval", input: { fn: "return 1" } },
+        { tool: "nav", input: { action: "reload" } },
+        { tool: "eval", input: { fn: "return 2" } },
+      ],
+    };
+    expect(defaultOutput(t)).toEqual({ from: "eval", step: 2 });
+  });
+
+  it("is none when there is no eval step", () => {
+    const t: Trace = { ...base, steps: [{ tool: "nav", input: { action: "reload" } }] };
+    expect(defaultOutput(t)).toEqual({ from: "none" });
+  });
+
+  it("honors an explicit output on the trace over the computed default", () => {
+    const t: Trace = {
+      ...base,
+      output: { from: "store", key: "result" },
+      steps: [{ tool: "eval", input: { fn: "return 1" } }],
+    };
+    expect(defaultOutput(t)).toEqual({ from: "store", key: "result" });
+  });
+});
+
+describe("describeTrace", () => {
+  it("returns the signature: name, task, params, output, step count", () => {
+    const t: Trace = {
+      version: VERSION,
+      task: "search for {q}",
+      model: "claude",
+      createdAt: "now",
+      params: [{ name: "q", example: "rust", required: true }],
+      steps: [
+        { tool: "nav", input: { action: "goto", arg: "https://x" } },
+        { tool: "eval", input: { fn: "return document.title" } },
+      ],
+    };
+    expect(describeTrace(t, "hn")).toEqual({
+      name: "hn",
+      task: "search for {q}",
+      model: "claude",
+      createdAt: "now",
+      version: VERSION,
+      steps: 2,
+      params: [{ name: "q", example: "rust", required: true }],
+      output: { from: "eval", step: 1 },
+    });
+  });
+
+  it("reports empty params and no output for an input-less, eval-less trace", () => {
+    const t: Trace = {
+      version: VERSION,
+      task: "t",
+      model: "m",
+      createdAt: "now",
+      steps: [{ tool: "nav", input: { action: "reload" } }],
+    };
+    const d = describeTrace(t, "x");
+    expect(d.params).toEqual([]);
+    expect(d.output).toEqual({ from: "none" });
   });
 });

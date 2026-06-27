@@ -6,6 +6,7 @@ dist/
 .pixelpi-profile/
 .pixelpi-store.json
 .glass-store.json
+run-out.jsonl
 coverage/
 *.tsbuildinfo
 

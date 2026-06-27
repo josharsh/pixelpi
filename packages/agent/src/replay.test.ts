@@ -20,6 +20,10 @@ vi.mock("@josharsh/pixelpi-cdp", () => {
       if (name === "look") {
         return { content: "page", observation: { url: "u", title: "t", refs: pageRefs, mode: "a11y" } };
       }
+      if (name === "eval") {
+        // value mirrors the fn so a test can tell which eval step's value was captured.
+        return { content: JSON.stringify(input.fn ?? null), observation: { value: input.fn } };
+      }
       return { content: `${name} ok`, observation: { url: "u", title: "t", summary: "ok", refs: [] } };
     },
   });
@@ -148,6 +152,22 @@ describe("replayTrace strict", () => {
     expect(closeSpy).toHaveBeenCalledOnce();
   });
 
+  it("closes Chrome exactly once when the signal aborts (no double-close)", async () => {
+    const ac = new AbortController();
+    ac.abort();
+    const trace: Trace = {
+      version: 1,
+      task: "t",
+      model: "m",
+      createdAt: "now",
+      steps: [{ tool: "nav", input: { action: "reload" } }],
+    };
+    await replayTrace({ trace, settings, tracePath: "/tmp/x.json", heal: false, signal: ac.signal }).catch(
+      () => undefined,
+    );
+    expect(closeSpy).toHaveBeenCalledOnce();
+  });
+
   it("honors an already-aborted signal", async () => {
     const ac = new AbortController();
     ac.abort();
@@ -162,6 +182,30 @@ describe("replayTrace strict", () => {
       replayTrace({ trace, settings, tracePath: "/tmp/x.json", heal: false, signal: ac.signal }),
     ).rejects.toThrow(/aborted/);
     expect(closeSpy).toHaveBeenCalledOnce();
+  });
+});
+
+describe("replayTrace output", () => {
+  const twoEvals: Trace = {
+    version: 1,
+    task: "t",
+    model: "m",
+    createdAt: "now",
+    steps: [
+      { tool: "eval", input: { fn: "first" } },
+      { tool: "eval", input: { fn: "second" } },
+    ],
+  };
+
+  it("captures the LAST eval's value as output by default", async () => {
+    const r = await replayTrace({ trace: twoEvals, settings, tracePath: "/tmp/x.json", heal: false });
+    expect(r.output).toBe("second");
+  });
+
+  it("honors an explicit output step over the last-eval default", async () => {
+    const trace: Trace = { ...twoEvals, output: { from: "eval", step: 0 } };
+    const r = await replayTrace({ trace, settings, tracePath: "/tmp/x.json", heal: false });
+    expect(r.output).toBe("first");
   });
 });
 

@@ -1,7 +1,7 @@
 import type { AgentEvent } from "@josharsh/pixelpi-core";
 import type { Ref } from "@josharsh/pixelpi-cdp";
 import type { Target, Trace, TraceStep } from "./trace";
-import { VERSION } from "./trace";
+import { VERSION, defaultOutput } from "./trace";
 
 export interface Recorder {
   onEvent(e: AgentEvent): void;
@@ -151,7 +151,7 @@ export function createRecorder(): Recorder {
     },
 
     build(task: string, model: string): Trace {
-      return {
+      const trace: Trace = {
         version: VERSION,
         task,
         model,
@@ -159,6 +159,9 @@ export function createRecorder(): Recorder {
         steps,
         result: finalText ? { finalText } : undefined,
       };
+      // Make the output source explicit (the last eval step, or none) so describe/run are deterministic.
+      trace.output = defaultOutput(trace);
+      return trace;
     },
   };
 }

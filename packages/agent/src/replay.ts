@@ -1,12 +1,12 @@
 import { createProvider } from "@josharsh/pixelpi-ai";
 import { runAgent, JsonFileStore } from "@josharsh/pixelpi-core";
-import type { AgentEvent, Store, ToolContext } from "@josharsh/pixelpi-core";
+import type { AgentEvent, Store, ToolContext, ToolResult } from "@josharsh/pixelpi-core";
 import { launchChrome, createBrowserTools } from "@josharsh/pixelpi-cdp";
 import type { Ref } from "@josharsh/pixelpi-cdp";
 import type { ResolvedSettings } from "./config";
 import { resolveTarget } from "./match";
 import { createRecorder } from "./record";
-import { saveTrace, type Trace, type TraceStep } from "./trace";
+import { defaultOutput, saveTrace, type Trace, type TraceStep } from "./trace";
 
 type TargetedStep = Extract<TraceStep, { tool: "act" | "fill" }>;
 
@@ -23,12 +23,15 @@ export interface ReplayResult {
   steps: ReplayStep[];
   drift?: { step: number; reason: string };
   finalText?: string;
+  /** Return value of the last successfully executed eval step, if any. */
+  output?: unknown;
 }
 
 export interface ReplayOptions {
   trace: Trace;
   settings: ResolvedSettings;
   tracePath: string;
+  store?: Store;
   heal: boolean;
   signal?: AbortSignal;
   onStep?: (step: ReplayStep) => void;
@@ -56,6 +59,23 @@ function labelFor(step: TraceStep): string {
   }
 }
 
+/**
+ * Pull the returned value out of an eval ToolResult. The eval tool sets observation to the
+ * EvalReturn ({ value } | { handle } | { error }); prefer observation.value, else JSON.parse the
+ * content (which is JSON.stringify(value)), else the raw content string.
+ */
+function evalOutput(res: ToolResult): unknown {
+  const obs = res.observation;
+  if (obs && typeof obs === "object" && "value" in obs) {
+    return (obs as { value: unknown }).value;
+  }
+  try {
+    return JSON.parse(res.content);
+  } catch {
+    return res.content;
+  }
+}
+
 function refsOf(observation: unknown): Ref[] {
   if (observation && typeof observation === "object" && "refs" in observation) {
     const refs = (observation as { refs: unknown }).refs;
@@ -67,12 +87,30 @@ function refsOf(observation: unknown): Ref[] {
 export async function replayTrace(opts: ReplayOptions): Promise<ReplayResult> {
   const { trace, settings, tracePath, heal, signal, onStep } = opts;
   const ctx: ToolContext = { signal: signal ?? new AbortController().signal, emit: () => {} };
+  // The output is the value of the designated eval step (defaults to the last eval). Capturing only
+  // that step keeps result.output deterministic and matches what `describe` reports.
+  const outSpec = defaultOutput(trace);
 
   const launched = await launchChrome({
     headless: settings.headless,
     userDataDir: settings.profileDir,
   });
-  const store: Store = new JsonFileStore(settings.storePath);
+  // Abort/timeout must tear down Chrome even mid-tool-call. The step loop only checks the signal
+  // BETWEEN steps, so a hung nav/look would otherwise keep the browser (and its temp profile) alive
+  // until the call settled. Closing on abort rejects the in-flight CDP call, so the finally does not
+  // wait on a hung page. closeOnce guards against the abort + finally both closing.
+  let closed = false;
+  const closeOnce = async (): Promise<void> => {
+    if (closed) return;
+    closed = true;
+    await launched.close();
+  };
+  const onAbort = () => void closeOnce().catch(() => undefined);
+  if (signal) {
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  }
+  const store: Store = opts.store ?? new JsonFileStore(settings.storePath);
   const tools = createBrowserTools({ session: launched.session, store });
   const byName = new Map(tools.map((t) => [t.name, t]));
   const lookTool = byName.get("look")!;
@@ -102,10 +140,11 @@ export async function replayTrace(opts: ReplayOptions): Promise<ReplayResult> {
       }
 
       if (step.tool === "eval") {
-        await evalTool.execute(
+        const evalRes = await evalTool.execute(
           { fn: step.input.fn, args: step.input.args, opts: step.input.opts },
           ctx,
         );
+        if (outSpec.from === "eval" && outSpec.step === i) result.output = evalOutput(evalRes);
         emitStep({ i, tool: "eval", label, status: "ok" });
         continue;
       }
@@ -158,7 +197,8 @@ export async function replayTrace(opts: ReplayOptions): Promise<ReplayResult> {
 
     return result;
   } finally {
-    await launched.close();
+    signal?.removeEventListener("abort", onAbort);
+    await closeOnce();
   }
 
   /**
