@@ -73,6 +73,34 @@ pixelpi replay hn-top --heal                                  # repair one step 
 
 Replay reproduces actions, not intent: it is for stable, repeated flows (a login, an export, a scrape). `--heal` is what reintroduces judgment when a page has genuinely changed.
 
+## Run over a dataset
+
+A parametrized trace is a function: record it once with example inputs, then run it across a list of inputs in parallel, with zero-token replay per row.
+
+```bash
+pixelpi "search Hacker News for rust" --record hn   # then name "rust" as an input (q)
+pixelpi run hn --query rust                          # one input
+pixelpi run hn --over queries.csv --concurrency 8    # map over a CSV/JSONL, in parallel
+```
+
+- Record naturally and pixelpi offers to turn the values you entered into named inputs, or declare them up front with `--param q=rust`. `pixelpi vars hn` re-opens the interactive naming any time.
+- `--over` takes a `.csv` (header row = input names) or `.jsonl`. Each row runs the trace with its values substituted, in its own headless Chrome, bounded by `--concurrency` (default 4). Outcomes stream to a JSONL file (`--out`), and `--resume` skips rows already done.
+- The first row runs alone as a warm-up. With `--heal` it repairs structural drift once and every other row replays the fix for free, so a 5,000-row job costs one model run plus, at most, a handful of repairs.
+- `pixelpi run hn` with no input prompts for each one, using the recorded example as the default.
+
+This shines for homogeneous, repeated flows. A row whose page genuinely differs surfaces as a per-row `drift` outcome, not a wrong result.
+
+## Describe a trace (for humans and agents)
+
+Every trace is an introspectable function. `describe` shows its inputs and output:
+
+```bash
+pixelpi describe hn            # human card: task, inputs, output, usage
+pixelpi describe hn --json     # {"type":"description","params":[...],"output":{...}}
+```
+
+Under `--json`, every command emits one NDJSON stream (progress, results, and errors as `{"type":"error","code":...}`), so an agent can drive pixelpi and parse a single clean contract.
+
 ## The six primitives
 
 ```
@@ -98,6 +126,7 @@ Elements are addressed by **stable ref** (not CSS/coordinates): cheap, determini
 | Substrate | **raw CDP** (no Playwright) | Playwright | CDP |
 | Self-extension | agent writes JS skills at runtime | no | no |
 | Replay | record once, replay with **0 tokens** | no | no |
+| Parallel fan-out | record once, run a whole dataset for ~0 tokens/row | no | no |
 
 **Token cost:** `look()` vs a raw-DOM dump, measured across the 15 sites [WebVoyager](https://github.com/MinorJerry/WebVoyager) tests on (full table + script in [`bench/`](https://github.com/josharsh/pixelpi/tree/main/bench)):
 
@@ -145,6 +174,17 @@ console.log((await evalJs.execute({ fn: "return document.title" }, ctx)).content
 await close();
 ```
 
+Or load a saved trace as a callable function, no model or API key required:
+
+```ts
+import { loadTrace } from "pixelpi";
+
+const hn = loadTrace("hn");                          // by name (home library) or path
+console.log(hn.describe());                          // { params, output, ... }
+const r  = await hn({ query: "rust" });              // run once  -> { ok, output }
+const rs = await hn.over(rows, { concurrency: 4 });  // map over a dataset, results in input order
+```
+
 More in [`examples/`](https://github.com/josharsh/pixelpi/tree/main/examples).
 
 ## Philosophy
@@ -157,7 +197,7 @@ Issues and PRs welcome. Run `pnpm install && pnpm build && pnpm test` before ope
 
 ## Status
 
-Substrate (`look`/`eval`) is validated live against real sites. The agent loop, guards, stores, and provider adapters are unit-tested (119 tests, mock provider, no network in tests). The full LLM↔browser loop runs once you supply an API key. Requires Node ≥ 20 and Google Chrome (macOS, Linux, or Windows).
+Substrate (`look`/`eval`) is validated live against real sites. The agent loop, guards, stores, and provider adapters are unit-tested (216 tests, mock provider, no network in tests). The full LLM↔browser loop runs once you supply an API key. Requires Node ≥ 20 and Google Chrome (macOS, Linux, or Windows).
 
 ## License
 
