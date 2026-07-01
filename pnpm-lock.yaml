@@ -63,8 +63,8 @@ importers:
         specifier: ^0.104.1
         version: 0.104.1
       openai:
-        specifier: ^6.42.0
-        version: 6.42.0(ws@8.21.0)
+        specifier: ^6.44.0
+        version: 6.44.0(ws@8.21.0)
 
   packages/cdp:
     dependencies:
@@ -1044,8 +1044,8 @@ packages:
     resolution: {integrity: sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==}
     engines: {node: '>=0.10.0'}
 
-  openai@6.42.0:
-    resolution: {integrity: sha512-1WFEt/uXMXOLhYRNkgJWo08Y2YNvNwpVU72K7ibrWgWpNOXd4VojXLbe6SQ4bLiUQ3Y8jz4IiyVkylJCL1DtZg==}
+  openai@6.44.0:
+    resolution: {integrity: sha512-09/gH+8jH0RgUwsgWHAaxsKGRT5zVZ95IaJUnqAWj6XejIBmnFRwq2WUIF37VtDEsmGrtPmvCs5+yBSeZGWvkA==}
     peerDependencies:
       ws: ^8.18.0
       zod: ^3.25 || ^4.0
@@ -2084,7 +2084,7 @@ snapshots:
 
   object-assign@4.1.1: {}
 
-  openai@6.42.0(ws@8.21.0):
+  openai@6.44.0(ws@8.21.0):
     optionalDependencies:
       ws: 8.21.0
 
