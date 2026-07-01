@@ -2,9 +2,9 @@
 
 # pixelpi
 
-**A minimal browser-agent harness. Six tools, raw CDP, any model.**
+**A browser your AI can afford.**
 
-*The page is the prompt.*
+*Record a task once. Run it on a thousand rows for the cost of one.*
 
 [![npm version](https://img.shields.io/npm/v/pixelpi.svg)](https://www.npmjs.com/package/pixelpi)
 [![npm downloads](https://img.shields.io/npm/dm/pixelpi.svg)](https://www.npmjs.com/package/pixelpi)
@@ -15,106 +15,47 @@
 npm i -g pixelpi
 ```
 
-<img src="https://raw.githubusercontent.com/josharsh/pixelpi/main/assets/pixelpi.gif" alt="pixelpi driving a real browser from the terminal" width="760" />
+<img src="https://raw.githubusercontent.com/josharsh/pixelpi/main/assets/pixelpi.gif" alt="pixelpi running a recorded task across a dataset in parallel" width="760" />
 
 </div>
 
-> `pixelpi "find the top story on Hacker News"`: the agent opens a real Chrome, looks once, and reports the title in a few steps. No Playwright, no vision model, no cloud.
+pixelpi lets any AI model use a real web browser, and it reads each page in about 2,000 tokens instead of 180,000. Then it goes further: once a task works, you record it, and pixelpi repeats those exact steps with no model in the loop, across a whole dataset, in parallel, self-healing when a page changes. It is pi, the minimal coding agent, applied to the browser: six tools, raw Chrome DevTools Protocol, any model, your key.
 
-Every other browser agent buries the model under a 20–30-tool MCP surface and a raw-DOM firehose. pixelpi gives it **six primitives** and a bounded view of the page. A heavy page that costs ~180k tokens as raw DOM, pixelpi hands the model in ~2k. That's **37× to 100× fewer tokens** across real sites, and it stays flat as the page grows. The model already knows how to use a browser; pixelpi just gets out of the way.
+## What you get
 
-If pixelpi saves you a 30-tool MCP install, a star helps others find it.
+- Read any page in **~2,000 tokens**, 37x to 100x fewer than raw DOM.
+- **Record** a solved task once; **replay** it with no model, deterministically, for free.
+- **Run** a recorded task across a CSV or JSONL **in parallel**, about 0 tokens per row.
+- **Self-heals**: when a page changes, the model fixes one step and every other row reuses it.
+- **Callable from code, readable by other AI agents** (typed SDK plus a clean `--json` contract).
 
-## Install
-
-```bash
-npm i -g pixelpi   # the CLI
-pixelpi            # first run → guided setup, then an interactive chat
-```
+> A normal browser agent does 5,000 inputs as 5,000 full loops. pixelpi does one recorded run plus 4,999 free replays. The model thinks once; the rest is nearly free.
 
 ## Quickstart
 
 ```bash
-npm i -g pixelpi                          # 1. install the global binary
-pixelpi auth                              # 2. set provider + key (or: export ANTHROPIC_API_KEY=…)
-pixelpi "find the top story on Hacker News and store its title"   # 3. run a task
+npm i -g pixelpi
+pixelpi auth                                        # set provider + key (any model)
+pixelpi "find the top story on Hacker News"         # run a task live
+pixelpi "search Hacker News for rust" --record hn   # record it, then name the input
+pixelpi run hn --over queries.csv --concurrency 8   # run it across a dataset, in parallel
 ```
 
-First run with no config drops you into guided setup (provider · key · model), then an interactive browser-agent chat. `pixelpi --json "…"` emits NDJSON for scripts.
+No key is needed to reproduce the token numbers or to replay a recorded trace. A key is only for the live model loop, and pixelpi works with any provider.
 
-## Sessions and login
+## The token win, measured
 
-Every run uses a fresh, disposable Chrome profile by default (logged out). To stay logged in across runs, use a persistent profile:
+`look()` versus a raw-DOM dump, across the sites [WebVoyager](https://github.com/MinorJerry/WebVoyager) tests on. Full table and a reproducible script (no key needed) are in [`bench/`](https://github.com/josharsh/pixelpi/tree/main/bench):
 
-```bash
-pixelpi login https://github.com          # opens a real Chrome; sign in, press Enter to save
-pixelpi --profile "check my GitHub notifications"   # reuses the saved session, headless
-```
+| Site | `look()` | raw DOM | factor |
+|---|---|---|---|
+| Coursera | 1,997 tok | 202,892 tok | **101.6×** |
+| GitHub | 1,955 tok | 146,787 tok | **75.1×** |
+| Apple | 2,254 tok | 96,507 tok | **42.8×** |
+| Hugging Face | 1,932 tok | 45,300 tok | **23.4×** |
+| ArXiv | 1,588 tok | 10,652 tok | **6.7×** |
 
-- `--profile` uses `~/.pixelpi/profile`; `--profile=<dir>` uses a custom one (handy for separate accounts).
-- Omit `--profile` for a fresh disposable profile each run.
-- Chrome locks a profile dir, so don't run two tasks against the same profile at once.
-
-pixelpi finds Chrome automatically on macOS, Linux, and Windows. Set `PIXELPI_CHROME=/path/to/chrome` to override.
-
-## Record and replay
-
-Save a solved run as a trace and replay it later with no model in the loop. The first run is the compile step; every replay is the binary: free, deterministic, and fast.
-
-```bash
-pixelpi "find the top story on Hacker News" --record hn-top   # solve once, save a trace
-pixelpi replay hn-top                                         # rerun it with no model, 0 tokens
-pixelpi replay hn-top --heal                                  # repair one step with the model if the page drifted
-```
-
-- Traces key on the accessibility role and name of each element, not CSS selectors or coordinates, so they survive most layout churn. A bare name lives in `~/.pixelpi/traces/`; pass a path (or a name ending in `.json`) to keep a trace inside a repo.
-- `--record` writes only when the run completes. Omit the name and it auto-slugs the task.
-- Strict `replay` needs no API key. On drift it stops and exits `3`, naming the step that no longer matches. `--heal` re-derives just that step with the model and rewrites the trace, so it self-corrects over time.
-
-Replay reproduces actions, not intent: it is for stable, repeated flows (a login, an export, a scrape). `--heal` is what reintroduces judgment when a page has genuinely changed.
-
-## Run over a dataset
-
-A parametrized trace is a function: record it once with example inputs, then run it across a list of inputs in parallel, with zero-token replay per row.
-
-```bash
-pixelpi "search Hacker News for rust" --record hn   # then name "rust" as an input (q)
-pixelpi run hn --query rust                          # one input
-pixelpi run hn --over queries.csv --concurrency 8    # map over a CSV/JSONL, in parallel
-```
-
-- Record naturally and pixelpi offers to turn the values you entered into named inputs, or declare them up front with `--param q=rust`. `pixelpi vars hn` re-opens the interactive naming any time.
-- `--over` takes a `.csv` (header row = input names) or `.jsonl`. Each row runs the trace with its values substituted, in its own headless Chrome, bounded by `--concurrency` (default 4). Outcomes stream to a JSONL file (`--out`), and `--resume` skips rows already done.
-- The first row runs alone as a warm-up. With `--heal` it repairs structural drift once and every other row replays the fix for free, so a 5,000-row job costs one model run plus, at most, a handful of repairs.
-- `pixelpi run hn` with no input prompts for each one, using the recorded example as the default.
-
-This shines for homogeneous, repeated flows. A row whose page genuinely differs surfaces as a per-row `drift` outcome, not a wrong result.
-
-## Describe a trace (for humans and agents)
-
-Every trace is an introspectable function. `describe` shows its inputs and output:
-
-```bash
-pixelpi describe hn            # human card: task, inputs, output, usage
-pixelpi describe hn --json     # {"type":"description","params":[...],"output":{...}}
-```
-
-Under `--json`, every command emits one NDJSON stream (progress, results, and errors as `{"type":"error","code":...}`), so an agent can drive pixelpi and parse a single clean contract.
-
-## The six primitives
-
-```
-look · act · fill · nav · eval · store
-```
-
-- **`look(mode?, filter?)`**: compact, ref-indexed accessibility/DOM snapshot. The `read`.
-- **`act(ref, op, value?)`**: mutate the page by stable ref via trusted CDP input events. The `write`/`edit`.
-- **`fill(fields[])`**: batched form fill in one call.
-- **`nav(action, arg?)`**: navigate, tabs, `waitfor`. The `cd` / processes.
-- **`eval(fn, args?, opts?)`**: arbitrary JS in the page realm. The escape hatch, the `bash` of the browser.
-- **`store(action, key?, value?)`**: durable host-side JSON KV. The filesystem.
-
-Elements are addressed by **stable ref** (not CSS/coordinates): cheap, deterministic, resilient to layout churn. Everything else is composable from `eval`; the agent writes its own higher-level tools as JSON skills at runtime, and only each skill's one-line description enters the prompt.
+`look()` holds around 2k tokens whatever the page weighs, while the raw DOM keeps growing. The heavier the site, the bigger the win.
 
 ## Why it's different
 
@@ -126,55 +67,74 @@ Elements are addressed by **stable ref** (not CSS/coordinates): cheap, determini
 | Substrate | **raw CDP** (no Playwright) | Playwright | CDP |
 | Self-extension | agent writes JS skills at runtime | no | no |
 | Replay | record once, replay with **0 tokens** | no | no |
-| Parallel fan-out | record once, run a whole dataset for ~0 tokens/row | no | no |
+| Parallel fan-out | record once, run a dataset for ~0 tokens/row | no | no |
 
-**Token cost:** `look()` vs a raw-DOM dump, measured across the 15 sites [WebVoyager](https://github.com/MinorJerry/WebVoyager) tests on (full table + script in [`bench/`](https://github.com/josharsh/pixelpi/tree/main/bench)):
+## Use it for
 
-| Site | `look()` | raw DOM | factor |
-|---|---|---|---|
-| Coursera | 1,997 tok | 202,892 tok | **101.6×** |
-| GitHub | 1,955 tok | 146,787 tok | **75.1×** |
-| Apple | 2,254 tok | 96,507 tok | **42.8×** |
-| Hugging Face | 1,932 tok | 45,300 tok | **23.4×** |
-| ArXiv | 1,588 tok | 10,652 tok | **6.7×** |
+Bulk form submissions, scraping at scale, price, stock, or account checks across a list, nightly portal exports, or giving your own AI agent a browser tool it can afford and call.
 
-**37× to 100× fewer tokens** across these sites (37× median). `look()` holds ~2k tokens whatever the page weighs, while the raw DOM keeps growing. Five of the twelve bot-block headless Chrome and return an empty page; [`bench/`](https://github.com/josharsh/pixelpi/tree/main/bench) has the full run. Reproduce it yourself: `pnpm bench:tokens`, no key needed.
+## Record, replay, and run over data
 
-## SDK usage
+Save a solved run as a trace, then replay it with no model in the loop. The first run is the compile step; every replay is the binary: free, deterministic, and fast.
 
-Drive the full agent loop from code:
-
-```ts
-import { createBrowserAgentSession } from "pixelpi";
-
-const session = await createBrowserAgentSession({
-  task: "extract all job listings from https://example.co/careers into JSON",
-  launch: { headless: true },
-});
-try {
-  const result = await session.run();
-  console.log(result.finalText);
-} finally {
-  await session.close();
-}
+```bash
+pixelpi "find the top story on Hacker News" --record hn-top   # solve once, save a trace
+pixelpi replay hn-top                                         # rerun it, no model, 0 tokens
+pixelpi replay hn-top --heal                                  # repair one step if the page drifted
 ```
 
-Or use the six primitives directly against raw CDP, no model in the loop:
+Traces key on the accessibility role and name of each element, not CSS selectors or coordinates, so they survive most layout changes. A bare name lives in `~/.pixelpi/traces/`; pass a path (or a name ending in `.json`) to keep a trace inside a repo. Strict `replay` needs no API key and exits `3` on drift, naming the step that no longer matches. `--heal` re-derives just that step with the model and rewrites the trace, so it self-corrects over time. Replay reproduces actions, not intent: it shines for stable, repeated flows.
 
-```ts
-import { launchChrome, createBrowserTools } from "@josharsh/pixelpi-cdp";
-import { MemoryStore } from "@josharsh/pixelpi-core";
+A parametrized trace is a function. Record it once with an example input, then run it across a list:
 
-const { session, close } = await launchChrome({ headless: true, startUrl: "https://news.ycombinator.com" });
-const [look, , , , evalJs] = createBrowserTools({ session, store: new MemoryStore() });
-const ctx = { signal: new AbortController().signal, emit: () => {} };
-
-console.log((await look.execute({}, ctx)).content);                 // compact a11y snapshot
-console.log((await evalJs.execute({ fn: "return document.title" }, ctx)).content);
-await close();
+```bash
+pixelpi "search Hacker News for rust" --record hn   # then name "rust" as the input q
+pixelpi run hn --query rust                          # one input
+pixelpi run hn --over queries.csv --concurrency 8    # map over a CSV/JSONL, in parallel
 ```
 
-Or load a saved trace as a callable function, no model or API key required:
+Each row runs in its own headless Chrome, bounded by `--concurrency` (default 4). Outcomes stream to a JSONL file (`--out`), `--resume` skips rows already done, and the first row runs alone as a warm-up so a single `--heal` repair benefits every other row. A 5,000-row job costs one model run plus, at most, a handful of repairs.
+
+## Describe a trace (for humans and agents)
+
+Every trace is an introspectable function. `describe` shows its inputs and output:
+
+```bash
+pixelpi describe hn            # human card: task, inputs, output, usage
+pixelpi describe hn --json     # {"type":"description","params":[...],"output":{...}}
+```
+
+Under `--json`, every command emits one NDJSON stream (progress, results, and errors as `{"type":"error","code":...}`), so an AI agent can drive pixelpi and parse a single clean contract.
+
+## Sessions and login
+
+Every run uses a fresh, disposable Chrome profile by default. To stay logged in across runs, use a persistent profile:
+
+```bash
+pixelpi login https://github.com                    # sign in once, press Enter to save
+pixelpi --profile "check my GitHub notifications"   # reuse the saved session, headless
+```
+
+`--profile` uses `~/.pixelpi/profile`; `--profile=<dir>` uses a custom one. pixelpi finds Chrome automatically on macOS, Linux, and Windows; set `PIXELPI_CHROME=/path/to/chrome` to override.
+
+## The six primitives
+
+```
+look · act · fill · nav · eval · store
+```
+
+- **`look(mode?, filter?)`**: compact, ref-indexed accessibility snapshot. The `read`.
+- **`act(ref, op, value?)`**: mutate the page by stable ref via trusted CDP input events. The `write`.
+- **`fill(fields[])`**: batched form fill in one call.
+- **`nav(action, arg?)`**: navigate, tabs, `waitfor`.
+- **`eval(fn, args?, opts?)`**: arbitrary JS in the page realm. The escape hatch, the `bash` of the browser.
+- **`store(action, key?, value?)`**: durable host-side JSON KV. The filesystem.
+
+Elements are addressed by **stable ref**, not CSS or coordinates: cheap, deterministic, resilient to layout churn. Everything else composes from `eval`; the agent writes its own higher-level tools as JSON skills at runtime, and only each skill's one-line description enters the prompt.
+
+## Use it from code
+
+Load a saved trace as a callable function, no model or API key required:
 
 ```ts
 import { loadTrace } from "pixelpi";
@@ -185,19 +145,19 @@ const r  = await hn({ query: "rust" });              // run once  -> { ok, outpu
 const rs = await hn.over(rows, { concurrency: 4 });  // map over a dataset, results in input order
 ```
 
-More in [`examples/`](https://github.com/josharsh/pixelpi/tree/main/examples).
+Or drive the full agent loop, or the six primitives against raw CDP with no model. More in [`examples/`](https://github.com/josharsh/pixelpi/tree/main/examples).
 
 ## Philosophy
 
-The model is the harness now, so you expose the substrate's irreducible primitives and let the agent compose the rest. See [docs/how-it-works.md](https://github.com/josharsh/pixelpi/blob/main/docs/how-it-works.md) for the moving parts (why six tools, why raw CDP, why no MCP).
+The model is the harness now, so you expose the substrate's irreducible primitives and let the agent compose the rest. This is the bet pi made for the terminal, applied to the browser. See [docs/how-it-works.md](https://github.com/josharsh/pixelpi/blob/main/docs/how-it-works.md) for the moving parts (why six tools, why raw CDP, why no MCP).
+
+## Status
+
+Substrate (`look`/`eval`) is validated live against real sites. The agent loop, guards, stores, replay, run, and provider adapters are unit-tested (216 tests, mock provider, no network in tests). The full model-to-browser loop runs once you supply an API key. Requires Node >= 20 and Google Chrome (macOS, Linux, or Windows). Pre-1.0 and moving fast.
 
 ## Contributing
 
 Issues and PRs welcome. Run `pnpm install && pnpm build && pnpm test` before opening a PR. See [CONTRIBUTING.md](https://github.com/josharsh/pixelpi/blob/main/CONTRIBUTING.md).
-
-## Status
-
-Substrate (`look`/`eval`) is validated live against real sites. The agent loop, guards, stores, and provider adapters are unit-tested (216 tests, mock provider, no network in tests). The full LLM↔browser loop runs once you supply an API key. Requires Node ≥ 20 and Google Chrome (macOS, Linux, or Windows).
 
 ## License
 

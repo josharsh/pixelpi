@@ -1,6 +1,6 @@
 {
   "name": "pixelpi",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "pi for the browser: a minimal browser-agent CLI and harness over raw Chrome DevTools Protocol, any model.",
   "type": "module",
   "types": "./src/index.ts",
