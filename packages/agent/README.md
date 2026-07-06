@@ -15,7 +15,7 @@
 npm i -g pixelpi
 ```
 
-<img src="https://raw.githubusercontent.com/josharsh/pixelpi/main/assets/pixelpi.gif" alt="pixelpi running a recorded task across a dataset in parallel" width="760" />
+<img src="https://cdn.jsdelivr.net/gh/josharsh/pixelpi@main/assets/pixelpi.gif" alt="pixelpi running a recorded task across a dataset in parallel" width="760" />
 
 </div>
 
