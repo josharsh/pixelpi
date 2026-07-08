@@ -62,7 +62,7 @@ export async function look(ctx: BrowserContext, opts: LookOptions = {}): Promise
 
   // a11y (default)
   const tree = await ctx.session.send<{ nodes: AXNode[] }>("Accessibility.getFullAXTree", {});
-  const { refs, refMap, truncated } = compactAxTree(tree.nodes ?? []);
+  const { refs, refMap, truncated, truncatedCount } = compactAxTree(tree.nodes ?? []);
 
   ctx.lastRefs.clear();
   for (const [k, v] of refMap) ctx.lastRefs.set(k, v);
@@ -74,7 +74,11 @@ export async function look(ctx: BrowserContext, opts: LookOptions = {}): Promise
     filtered = refs.filter((r) => r.role.toLowerCase().includes(f) || r.name.toLowerCase().includes(f));
   }
   const header = `${title}\n${url}\n${filtered.length} of ${refs.length} refs${truncated ? " (TRUNCATED at 200)" : ""}`;
-  return { snapshot, text: `${header}\n${renderRefs(filtered)}` };
+  let text = `${header}\n${renderRefs(filtered)}`;
+  if (truncated && truncatedCount > 0) {
+    text += `\n… ${truncatedCount} more elements below — scroll or filter`;
+  }
+  return { snapshot, text };
 }
 
 function delta(snapshot: Snapshot, summary: string): SnapshotDelta {
