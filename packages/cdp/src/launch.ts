@@ -1,5 +1,5 @@
 import { execSync, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CdpClient } from "./client";
@@ -157,6 +157,15 @@ export async function launchChrome(
   if (opts.args) args.push(...opts.args);
   args.push(startUrl);
 
+  // A previous run on this profile can leave a stale DevToolsActivePort behind (Chrome
+  // killed via SIGTERM doesn't always clean it up). Reading it would point us at a dead
+  // port before the new Chrome overwrites the file — remove it so we only see the fresh one.
+  try {
+    unlinkSync(join(userDataDir, "DevToolsActivePort"));
+  } catch {
+    /* absent — the common case */
+  }
+
   const proc: ChildProcess = spawn(executablePath, args, { stdio: "ignore" });
   // A missing/un-spawnable Chrome surfaces here (async) — capture it so poll() fails fast & friendly.
   let spawnError: FatalError | undefined;
@@ -185,6 +194,12 @@ export async function launchChrome(
     const target = await poll(() => resolvePageTarget(base, startUrl), 15000);
     client = new CdpClient(target.webSocketDebuggerUrl);
     await client.whenReady();
+    // A persistent profile can restore the previous run's page into the tab we attach to,
+    // silently handing the agent stale navigation state. Reset to startUrl: cookies and
+    // storage (the point of --profile) survive; the leftover page does not.
+    if (target.url && target.url !== startUrl) {
+      await client.send("Page.navigate", { url: startUrl }).catch(() => undefined);
+    }
   } catch (err) {
     if (!proc.killed) proc.kill();
     if (spawnError) throw spawnError;
