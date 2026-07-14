@@ -58,7 +58,7 @@ export type AgentEvent =
   | { type: "agent_end"; step: number; reason: AgentStopReason; usage: Usage }
   | { type: "log"; level: "debug" | "info" | "warn" | "error"; message: string };
 
-export type AgentStopReason = "done" | "max_steps" | "max_tokens" | "aborted" | "error";
+export type AgentStopReason = "done" | "blocked" | "max_steps" | "max_tokens" | "aborted" | "error";
 
 // ── Guards (deterministic reliability, in the harness, not the model) ─────────
 
@@ -84,7 +84,15 @@ export interface AgentOptions {
   maxSteps?: number;
   /** Circuit breaker: cumulative output-token budget. Optional. */
   maxTokens?: number;
+  /** Circuit breaker: cumulative input+output token budget across the whole run. Optional. */
+  maxTotalTokens?: number;
   maxTokensPerCall?: number;
+  /**
+   * Context bound: tool results older than the last N tool-bearing exchanges are elided
+   * (head kept, rest dropped) on each provider call, so input tokens grow linearly with
+   * steps instead of quadratically. Default 8; 0 disables pruning.
+   */
+  keepRecentToolResults?: number;
   temperature?: number;
   signal?: AbortSignal;
   guards?: GuardConfig;

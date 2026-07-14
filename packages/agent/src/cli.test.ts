@@ -75,6 +75,24 @@ describe("parseArgs", () => {
     expect(f.timeout).toBe(5000);
   });
 
+  it("parses the guardrail flags: --allow-domains, --dry-run, --confirm, --max-tokens", () => {
+    const f = parseArgs([
+      "do the thing", "--allow-domains", "sessionize.com, github.com", "--dry-run", "--confirm", "--max-tokens", "500000",
+    ]);
+    expect(f.allowDomains).toEqual(["sessionize.com", "github.com"]);
+    expect(f.dryRun).toBe(true);
+    expect(f.confirm).toBe(true);
+    expect(f.maxTokens).toBe(500000);
+    expect(f.task).toBe("do the thing");
+  });
+
+  it("--allow-domains=<csv> prefix form works and does not leak into params", () => {
+    const f = parseArgs(["--allow-domains=example.com", "read example.com"]);
+    expect(f.allowDomains).toEqual(["example.com"]);
+    expect(f.params).toEqual({});
+    expect(f.task).toBe("read example.com");
+  });
+
   it("--json implies print", () => {
     const f = parseArgs(["task", "--json"]);
     expect(f.json).toBe(true);

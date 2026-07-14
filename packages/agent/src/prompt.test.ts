@@ -47,4 +47,38 @@ describe("buildSystemPrompt", () => {
     const p = buildSystemPrompt({ skillDescriptions: [] });
     expect(p.split(/\s+/).length).toBeLessThan(600);
   });
+
+  it("always carries the task contract: no goal substitution, no invented data, BLOCKED exit", () => {
+    const p = buildSystemPrompt({ skillDescriptions: [] });
+    expect(p).toContain("Task contract");
+    expect(p).toMatch(/never substitute/i);
+    expect(p).toMatch(/never invent data/i);
+    expect(p).toContain('"BLOCKED: <reason>"');
+  });
+
+  it("names the fence domains only when an allowlist is set", () => {
+    const off = buildSystemPrompt({ skillDescriptions: [] });
+    expect(off).not.toContain("Navigation fence");
+    const on = buildSystemPrompt({ skillDescriptions: [], allowDomains: ["sessionize.com"] });
+    expect(on).toContain("Navigation fence");
+    expect(on).toContain("sessionize.com");
+  });
+
+  it("explains the withheld commit boundary only under dryRun", () => {
+    const off = buildSystemPrompt({ skillDescriptions: [] });
+    expect(off).not.toContain("DRY RUN");
+    const on = buildSystemPrompt({ skillDescriptions: [], dryRun: true });
+    expect(on).toContain("DRY RUN");
+    expect(on).toMatch(/withheld/i);
+  });
+
+  it("keeps skills listed after the conditional sections", () => {
+    const p = buildSystemPrompt({
+      skillDescriptions: ["gh-star: star the current GitHub repo"],
+      allowDomains: ["github.com"],
+      dryRun: true,
+    });
+    expect(p).toContain("Available skills:");
+    expect(p.indexOf("Navigation fence")).toBeLessThan(p.indexOf("Available skills:"));
+  });
 });

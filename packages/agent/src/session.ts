@@ -3,7 +3,7 @@ import { runAgent, JsonFileStore } from "@josharsh/pixelpi-core";
 import type { LLMProvider, ProviderKind } from "@josharsh/pixelpi-ai";
 import type { AgentEvent, AgentResult, LLMMessage, Store, Tool, Usage } from "@josharsh/pixelpi-core";
 import { launchChrome, createBrowserTools } from "@josharsh/pixelpi-cdp";
-import type { CdpSession, Skill } from "@josharsh/pixelpi-cdp";
+import type { CdpSession, PendingAction, Skill } from "@josharsh/pixelpi-cdp";
 import { buildSystemPrompt } from "./prompt";
 import type { ResolvedSettings } from "./config";
 import type { PixelpiSession, PixelpiSessionOptions } from "./types";
@@ -40,6 +40,14 @@ export interface PixelpiSessionInit {
   settings: ResolvedSettings;
   store?: Store;
   maxSteps?: number;
+  /** Circuit breaker: cumulative input+output token budget for a run. */
+  maxTotalTokens?: number;
+  /** Navigation allowlist enforced at the tool layer (hosts + their subdomains). */
+  allowDomains?: string[];
+  /** Withhold consequential actions (submit/send/purchase) instead of performing them. */
+  dryRun?: boolean;
+  /** Ask before each consequential action; false/absent resolution withholds it. */
+  confirmAction?: (action: PendingAction) => Promise<boolean>;
   onEvent?: (event: AgentEvent) => void;
 }
 
@@ -65,8 +73,18 @@ export function createPixelpiSession(init: PixelpiSessionInit): InteractiveSessi
     if (chrome) return;
     const launched = await launchChrome({ headless, userDataDir: profileDir });
     chrome = { session: launched.session, close: launched.close };
-    tools = createBrowserTools({ session: launched.session, store });
-    system = buildSystemPrompt({ skillDescriptions: await readSkillDescriptions(store) });
+    tools = createBrowserTools({
+      session: launched.session,
+      store,
+      allowDomains: init.allowDomains,
+      dryRun: init.dryRun,
+      confirmAction: init.confirmAction,
+    });
+    system = buildSystemPrompt({
+      skillDescriptions: await readSkillDescriptions(store),
+      allowDomains: init.allowDomains,
+      dryRun: init.dryRun,
+    });
   }
 
   return {
@@ -82,6 +100,7 @@ export function createPixelpiSession(init: PixelpiSessionInit): InteractiveSessi
         tools,
         messages,
         maxSteps: init.maxSteps,
+        maxTotalTokens: init.maxTotalTokens,
         signal,
         onEvent: init.onEvent,
       });
@@ -146,6 +165,10 @@ export async function createBrowserAgentSession(opts: PixelpiSessionOptions): Pr
     settings,
     store: opts.store,
     maxSteps: opts.maxSteps,
+    maxTotalTokens: opts.maxTotalTokens,
+    allowDomains: opts.allowDomains,
+    dryRun: opts.dryRun,
+    confirmAction: opts.confirmAction,
     onEvent: opts.onEvent,
   });
   return {

@@ -9,6 +9,7 @@ import type {
 } from "./types";
 import type { BrowserContext, NavAction } from "./actions";
 import { act, fill, look, nav } from "./actions";
+import { hostAllowed } from "./guardrails";
 import { runEval, type EvalCtx } from "./evaltool";
 import { applySkills, skillMatches, wrapSkill } from "./skills";
 
@@ -42,6 +43,9 @@ export const createBrowserTools: CreateBrowserTools = (opts: BrowserToolsOptions
     defaultMode,
     evalCtx,
     lastRefs: new Map(),
+    allowDomains: opts.allowDomains ?? [],
+    dryRun: opts.dryRun ?? false,
+    confirmAction: opts.confirmAction,
   };
 
   // Skills registered via addScriptToEvaluateOnNewDocument (idempotent by name).
@@ -60,6 +64,14 @@ export const createBrowserTools: CreateBrowserTools = (opts: BrowserToolsOptions
     const frame = (params as { frame?: { parentId?: string; url?: string } }).frame;
     if (!frame || frame.parentId) return; // main frame only
     evalCtx.isolatedContextId = undefined;
+    // Fence enforcement for page-initiated navigation (link clicks, JS redirects):
+    // bounce to about:blank and report on the next look, so a click can't leave the
+    // allowlist any more than a goto can.
+    if (frame.url && !hostAllowed(frame.url, ctx.allowDomains)) {
+      ctx.blockedNav = frame.url;
+      void session.send("Page.navigate", { url: "about:blank" }).catch(() => undefined);
+      return;
+    }
     if (frame.url) void applySkills(session, store, frame.url).catch(() => undefined);
   });
 
@@ -143,8 +155,8 @@ export const createBrowserTools: CreateBrowserTools = (opts: BrowserToolsOptions
       required: ["action"],
     },
     async execute(input) {
-      const { result, text } = await nav(ctx, input.action as NavAction, str(input.arg));
-      return { content: text, observation: result };
+      const { result, text, error } = await nav(ctx, input.action as NavAction, str(input.arg));
+      return { content: text, observation: result, isError: error };
     },
   };
 

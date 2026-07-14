@@ -45,6 +45,40 @@ function toolUsesOf(content: ContentBlock[]): ToolUseBlock[] {
   return content.filter((b): b is ToolUseBlock => b.type === "tool_use");
 }
 
+const ELIDE_OVER = 600;
+const ELIDE_KEEP = 200;
+
+/**
+ * Bound the context (#24): keep the last `keepRecent` tool-result exchanges verbatim and
+ * elide the body of older, larger tool results (a stale snapshot from 40 steps ago is
+ * dead weight the model resends every turn). Pure — returns a fresh array; the canonical
+ * conversation in `messages` is never mutated.
+ */
+export function pruneToolResults(messages: LLMMessage[], keepRecent: number): LLMMessage[] {
+  const withResults: number[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i]!.content.some((b) => b.type === "tool_result")) withResults.push(i);
+  }
+  const elide = new Set(withResults.slice(0, Math.max(0, withResults.length - keepRecent)));
+  if (elide.size === 0) return messages;
+  return messages.map((m, i) => {
+    if (!elide.has(i)) return m;
+    return {
+      ...m,
+      content: m.content.map((b) =>
+        b.type === "tool_result" && b.content.length > ELIDE_OVER
+          ? {
+              ...b,
+              content:
+                b.content.slice(0, ELIDE_KEEP) +
+                `\n…[${b.content.length - ELIDE_KEEP} chars elided — stale earlier observation; look again if needed]`,
+            }
+          : b,
+      ),
+    };
+  });
+}
+
 export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
   const {
     provider,
@@ -53,7 +87,9 @@ export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
     tools,
     maxSteps = 50,
     maxTokens,
+    maxTotalTokens,
     maxTokensPerCall,
+    keepRecentToolResults = 8,
     temperature,
     signal,
     guards,
@@ -81,6 +117,7 @@ export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
   };
 
   let step = 0;
+  let warnedTokenBudget = false;
   try {
     for (;;) {
       step += 1;
@@ -91,7 +128,7 @@ export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
         {
           model,
           system,
-          messages,
+          messages: keepRecentToolResults > 0 ? pruneToolResults(messages, keepRecentToolResults) : messages,
           tools: toolSchemas,
           maxTokens: maxTokensPerCall,
           temperature,
@@ -108,7 +145,11 @@ export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
       const toolUses = toolUsesOf(response.content);
 
       if (toolUses.length === 0) {
-        return end(step, "done", textOf(response.content));
+        const finalText = textOf(response.content);
+        // The task contract's fail-closed exit: the model reports an unreachable goal or
+        // ungrounded required data instead of substituting or fabricating (#20, #21).
+        if (/^\s*BLOCKED:/i.test(finalText)) return end(step, "blocked", finalText);
+        return end(step, "done", finalText);
       }
 
       const resultBlocks: ToolResultBlock[] = [];
@@ -141,6 +182,15 @@ export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
       }
       if (maxTokens !== undefined && usage.outputTokens >= maxTokens) {
         emit({ type: "guard", step, reason: "max_tokens", detail: `output tokens ${usage.outputTokens} >= ${maxTokens}` });
+        return end(step, "max_tokens", "");
+      }
+      const totalTokens = usage.inputTokens + usage.outputTokens;
+      if (maxTotalTokens !== undefined && !warnedTokenBudget && totalTokens >= maxTotalTokens * 0.8 && totalTokens < maxTotalTokens) {
+        warnedTokenBudget = true;
+        emit({ type: "log", level: "warn", message: `token budget 80% used: ${totalTokens} of ${maxTotalTokens}` });
+      }
+      if (maxTotalTokens !== undefined && totalTokens >= maxTotalTokens) {
+        emit({ type: "guard", step, reason: "max_tokens", detail: `total tokens ${totalTokens} >= ${maxTotalTokens}` });
         return end(step, "max_tokens", "");
       }
       if (signal?.aborted) {

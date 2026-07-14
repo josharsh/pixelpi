@@ -3,6 +3,7 @@ import { compactAxTree, renderRefs, type AXNode } from "./snapshot";
 import type { EvalCtx } from "./evaltool";
 import { runEval } from "./evaltool";
 import { applySkills } from "./skills";
+import { hostAllowed, isConsequentialClick, type PendingAction } from "./guardrails";
 
 /** The shared mutable closure state threaded through every tool. */
 export interface BrowserContext {
@@ -11,6 +12,13 @@ export interface BrowserContext {
   defaultMode: LookMode;
   evalCtx: EvalCtx;
   lastRefs: Map<number, { backendDOMNodeId: number; role: string; name: string }>;
+  /** Navigation fence (#23). Empty = unrestricted. */
+  allowDomains: string[];
+  /** Consequential-action gate (#22). */
+  dryRun: boolean;
+  confirmAction?: (action: PendingAction) => Promise<boolean>;
+  /** Set when a page-initiated navigation was bounced off the fence; reported on the next look. */
+  blockedNav?: string;
 }
 
 interface BoxModel {
@@ -74,7 +82,12 @@ export async function look(ctx: BrowserContext, opts: LookOptions = {}): Promise
     filtered = refs.filter((r) => r.role.toLowerCase().includes(f) || r.name.toLowerCase().includes(f));
   }
   const header = `${title}\n${url}\n${filtered.length} of ${refs.length} refs${truncated ? " (TRUNCATED at 200)" : ""}`;
-  return { snapshot, text: `${header}\n${renderRefs(filtered)}` };
+  let note = "";
+  if (ctx.blockedNav) {
+    note = `\n(navigation to ${ctx.blockedNav} was blocked: outside the allowed domains ${ctx.allowDomains.join(", ")})`;
+    ctx.blockedNav = undefined;
+  }
+  return { snapshot, text: `${header}${note}\n${renderRefs(filtered)}` };
 }
 
 function delta(snapshot: Snapshot, summary: string): SnapshotDelta {
@@ -187,6 +200,29 @@ export async function act(
       text: `ref ${ref} not found. Fresh snapshot:\n${snap.text}`,
     };
   }
+  // The commit boundary (#22): a click that looks like submit/send/purchase is withheld
+  // under dry-run, or requires explicit approval under --confirm. Everything before it
+  // (navigate, read, fill) runs normally.
+  if (isConsequentialClick(op, target.role, target.name) && (ctx.dryRun || ctx.confirmAction)) {
+    const { url, title } = await readUrlTitle(ctx);
+    const pending: PendingAction = { op, ref, role: target.role, name: target.name, value, url, title };
+    if (ctx.dryRun) {
+      const snap = await look(ctx);
+      const note =
+        `DRY RUN: withheld ${op} on [${ref}] ${target.role} "${target.name}" at ${url} — this is the commit boundary. ` +
+        `Do not attempt it again or look for another way to commit. Summarize exactly what would be submitted (target + field values) and finish.`;
+      return { delta: delta(snap.snapshot, note), text: note };
+    }
+    const approved = await ctx.confirmAction!(pending);
+    if (!approved) {
+      const snap = await look(ctx);
+      const note =
+        `WITHHELD: ${op} on [${ref}] ${target.role} "${target.name}" was not approved. ` +
+        `Do not retry it or seek another way to commit. Report what is pending and finish.`;
+      return { delta: delta(snap.snapshot, note), text: note };
+    }
+  }
+
   const backendNodeId = target.backendDOMNodeId;
   await ctx.session.send("DOM.scrollIntoViewIfNeeded", { backendNodeId }).catch(() => undefined);
 
@@ -267,7 +303,18 @@ export async function nav(
   ctx: BrowserContext,
   action: NavAction,
   arg?: string,
-): Promise<{ result: SnapshotDelta | Snapshot; text: string }> {
+): Promise<{ result: SnapshotDelta | Snapshot; text: string; error?: boolean }> {
+  // The navigation fence (#23): goto/newtab outside the allowlist are refused at the
+  // tool layer, so staying on target is an invariant rather than a prompt-hope.
+  if ((action === "goto" || action === "newtab") && arg && !hostAllowed(arg, ctx.allowDomains)) {
+    return {
+      result: { url: "", title: "", summary: `blocked navigation to ${arg}`, refs: [] },
+      text:
+        `domain_not_allowed: ${arg} is outside the allowed domains (${ctx.allowDomains.join(", ")}). ` +
+        `Navigation is restricted; if the task cannot proceed within these domains, stop and report BLOCKED.`,
+      error: true,
+    };
+  }
   switch (action) {
     case "goto": {
       const loaded = ctx.session.once("Page.loadEventFired", { timeoutMs: 15000 }).catch(() => undefined);
@@ -335,7 +382,31 @@ export async function nav(
       };
     }
     case "switchtab": {
-      await ctx.session.send("Target.activateTarget", { targetId: arg });
+      // An empty or unknown targetId can never succeed — fail fast with the open tabs
+      // instead of throwing into the retry path (#25).
+      const listTabs = async (): Promise<string> => {
+        const t = await ctx.session
+          .send<{ targetInfos: { targetId: string; type: string; url: string }[] }>("Target.getTargets", {})
+          .catch(() => ({ targetInfos: [] }));
+        const pages = t.targetInfos.filter((i) => i.type === "page");
+        return pages.map((p) => `  ${p.targetId}  ${p.url}`).join("\n") || "  (none)";
+      };
+      if (!arg || !arg.trim()) {
+        return {
+          result: { url: "", title: "", summary: "switchtab needs a targetId", refs: [] },
+          text: `switchtab requires a tab targetId (newtab returns one). Open tabs:\n${await listTabs()}`,
+          error: true,
+        };
+      }
+      try {
+        await ctx.session.send("Target.activateTarget", { targetId: arg });
+      } catch {
+        return {
+          result: { url: "", title: "", summary: `no tab with id ${arg}`, refs: [] },
+          text: `no tab with id "${arg}". Open tabs:\n${await listTabs()}`,
+          error: true,
+        };
+      }
       const snap = await look(ctx);
       return {
         result: delta(snap.snapshot, `activated tab ${arg} (session still drives the original tab)`),

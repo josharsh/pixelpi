@@ -3,7 +3,7 @@ import { stdin, stdout, stderr } from "node:process";
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
-import { launchChrome } from "@josharsh/pixelpi-cdp";
+import { launchChrome, type PendingAction } from "@josharsh/pixelpi-cdp";
 import { PixelpiProviderError, type ProviderKind } from "@josharsh/pixelpi-ai";
 import type { AgentEvent } from "@josharsh/pixelpi-core";
 import { createPixelpiSession } from "./session";
@@ -42,6 +42,14 @@ export interface Flags {
   /** Persistent profile dir, or "" when --profile is present with no value (→ DEFAULT_PROFILE). */
   profile?: string;
   maxSteps?: number;
+  /** Total (input+output) token budget circuit breaker. */
+  maxTokens?: number;
+  /** Navigation fence: hosts (+subdomains) the agent may visit. */
+  allowDomains?: string[];
+  /** Withhold consequential actions (submit/send/purchase). */
+  dryRun: boolean;
+  /** Ask y/N before each consequential action. */
+  confirm: boolean;
   /** Save a trace of this run: undefined = off, "" = auto-slug the task, or a name/path. */
   record?: string;
   heal: boolean;
@@ -93,6 +101,8 @@ export function parseArgs(argv: string[]): Flags {
     describe: undefined,
     vars: {},
     params: {},
+    dryRun: false,
+    confirm: false,
     resume: false,
     failFast: false,
     quiet: false,
@@ -108,6 +118,10 @@ export function parseArgs(argv: string[]): Flags {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a.startsWith("--profile=")) { f.profile = a.slice("--profile=".length); continue; }
+    if (a.startsWith("--allow-domains=")) {
+      f.allowDomains = a.slice("--allow-domains=".length).split(",").map((s) => s.trim()).filter(Boolean);
+      continue;
+    }
     if (a.startsWith("--record=")) { f.record = a.slice("--record=".length); continue; }
     if (a.startsWith("--param=")) {
       const pair = a.slice("--param=".length);
@@ -172,6 +186,12 @@ export function parseArgs(argv: string[]): Flags {
       case "--store": f.store = argv[++i]; break;
       case "--profile": f.profile = ""; break; // bare flag → DEFAULT_PROFILE (use --profile=<dir> for a custom one)
       case "--max-steps": { const n = parseInt(argv[++i]!, 10); if (Number.isFinite(n)) f.maxSteps = n; break; }
+      case "--max-tokens": { const n = parseInt(argv[++i]!, 10); if (Number.isFinite(n)) f.maxTokens = n; break; }
+      case "--allow-domains":
+        f.allowDomains = (argv[++i] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+        break;
+      case "--dry-run": f.dryRun = true; break;
+      case "--confirm": f.confirm = true; break;
       case "-p": case "--print": f.print = true; break;
       case "--json": f.json = true; f.print = true; break;
       case "--no-input": f.noInput = true; break;
@@ -239,6 +259,14 @@ FLAGS
       --profile=<dir>   reuse a persistent profile at a custom dir
                         (omit --profile entirely for a fresh disposable profile each run)
       --max-steps <n>   step circuit breaker (default: 50)
+      --max-tokens <n>  token circuit breaker: stop when input+output tokens reach n
+      --allow-domains <a.com,b.com>
+                        navigation fence: refuse any navigation off these domains
+                        (+subdomains); the agent reports BLOCKED instead of wandering
+      --dry-run         do everything up to the commit boundary (submit/send/purchase),
+                        then withhold it and report what would have been submitted
+      --confirm         ask y/N before each consequential action
+                        (non-interactive/--json: denied and reported, never committed)
       --record [name]   save trace of this run for replay (omit name to auto-slug)
       --param name=val  with --record: declare a value you used as an input named <name>
                         (repeatable; e.g. --param query=rust). --vars is an alias.
@@ -263,6 +291,10 @@ RUN FLAGS (pixelpi run <trace> ...)
       --no-color        disable color (also respects NO_COLOR)
   -h, --help            this help
       --version         print version
+
+EXIT CODES
+  0 done · 1 error · 2 usage · 3 replay drift · 4 blocked (task could not proceed;
+  the agent halted instead of substituting a goal or inventing data) · 130 interrupted
 
 Config: ~/.config/pixelpi/config.json`;
 
@@ -795,6 +827,33 @@ async function main(): Promise<void> {
     interactive,
   );
 
+  // The commit-boundary gate (#22): under --confirm, a consequential action pauses for an
+  // explicit y/N. With no way to ask (--json / no TTY), it is denied and reported — the
+  // safe default is to not commit. --dry-run never reaches this (withheld at the tool layer).
+  const confirmAction = flags.confirm
+    ? async (a: PendingAction): Promise<boolean> => {
+        if (flags.json || !interactive) {
+          stdout.write(
+            JSON.stringify({ type: "pending_action", action: a, approved: false, reason: "no confirmation channel; denied" }) + "\n",
+          );
+          return false;
+        }
+        stdout.write(`\n⚠ pending: ${a.op} on ${a.role} "${a.name}" at ${a.url}\n`);
+        const rl = createInterface({ input: stdin, output: stdout });
+        const ans = await new Promise<string>((res) => rl.question("  proceed? [y/N] ", res));
+        rl.close();
+        return ans.trim().toLowerCase() === "y";
+      }
+    : undefined;
+  const sessionInit = {
+    settings,
+    maxSteps: flags.maxSteps,
+    maxTotalTokens: flags.maxTokens,
+    allowDomains: flags.allowDomains,
+    dryRun: flags.dryRun,
+    confirmAction,
+  };
+
   if (oneShot) {
     if (!task) {
       stderr.write(
@@ -862,7 +921,7 @@ async function main(): Promise<void> {
           base(e);
         }
       : base;
-    const session = createPixelpiSession({ settings, maxSteps: flags.maxSteps, onEvent });
+    const session = createPixelpiSession({ ...sessionInit, onEvent });
     const ac = new AbortController();
     const onSig = () => ac.abort();
     process.on("SIGINT", onSig);
@@ -929,7 +988,8 @@ async function main(): Promise<void> {
           else stdout.write("trace not saved (run did not complete)\n");
         }
       }
-      process.exitCode = result.stopReason === "error" ? 1 : 0;
+      process.exitCode =
+        result.stopReason === "error" ? 1 : result.stopReason === "blocked" ? 4 : 0;
     } catch (err) {
       if (err instanceof Error && (err.name === "AbortError" || err.name === "APIUserAbortError")) {
         stderr.write("\n⚠ cancelled\n");
@@ -943,7 +1003,7 @@ async function main(): Promise<void> {
   }
 
   // Interactive REPL.
-  const session = createPixelpiSession({ settings, maxSteps: flags.maxSteps, onEvent: renderEvent });
+  const session = createPixelpiSession({ ...sessionInit, onEvent: renderEvent });
   await startRepl(session, settings, { color: useColor });
 }
 

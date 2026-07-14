@@ -97,6 +97,15 @@ export interface BrowserToolsOptions {
   store: Store;
   /** Default snapshot mode for `look`. Default "a11y". */
   defaultMode?: LookMode;
+  /** Navigation allowlist: hosts (and their subdomains) the agent may visit. Empty/omitted = no fence. */
+  allowDomains?: string[];
+  /** Withhold consequential actions (submit/send/purchase) instead of performing them. */
+  dryRun?: boolean;
+  /**
+   * Ask before each consequential action. Resolve true to proceed, false to withhold.
+   * When set together with dryRun, dryRun wins (never asks, never commits).
+   */
+  confirmAction?: (action: import("./guardrails").PendingAction) => Promise<boolean>;
 }
 
 /**
