@@ -1,6 +1,6 @@
 {
   "name": "@josharsh/pixelpi-cdp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Thin Chrome DevTools Protocol transport powering pixelpi's pixel-cheap look() over raw CDP.",
   "type": "module",
   "types": "./src/index.ts",

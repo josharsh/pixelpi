@@ -1,6 +1,6 @@
 {
   "name": "@josharsh/pixelpi-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Provider-agnostic agent loop, tool/store interfaces, and deterministic guards for pixelpi (no browser deps).",
   "type": "module",
   "types": "./src/index.ts",

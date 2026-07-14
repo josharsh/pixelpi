@@ -28,6 +28,7 @@ pixelpi lets any AI model use a real web browser, and it reads each page in abou
 - **Run** a recorded task across a CSV or JSONL **in parallel**, about 0 tokens per row.
 - **Self-heals**: when a page changes, the model fixes one step and every other row reuses it.
 - **Callable from code, readable by other AI agents** (typed SDK plus a clean `--json` contract).
+- **Guardrailed**: a domain fence, a dry-run/confirm gate before anything irreversible, token budgets, and a fail-closed `BLOCKED` outcome — enforced in the harness, not the prompt.
 
 > A normal browser agent does 5,000 inputs as 5,000 full loops. pixelpi does one recorded run plus 4,999 free replays. The model thinks once; the rest is nearly free.
 
@@ -117,6 +118,23 @@ pixelpi --profile "check my GitHub notifications"   # reuse the saved session, h
 
 `--profile` uses `~/.pixelpi/profile`; `--profile=<dir>` uses a custom one. pixelpi finds Chrome automatically on macOS, Linux, and Windows; set `PIXELPI_CHROME=/path/to/chrome` to override.
 
+## Guardrails
+
+An agent that fills forms and clicks Submit needs harder limits than a system prompt. Every guardrail below is **deterministic — enforced at the tool layer**, not left to the model's judgment:
+
+```bash
+pixelpi --allow-domains sessionize.com "submit my talk at https://sessionize.com/..."  # can't wander off
+pixelpi --dry-run "fill the order form on example.com and submit it"                   # stops at the commit boundary
+pixelpi --confirm "send the contact form on example.com"                               # asks y/N before it commits
+pixelpi --max-tokens 500000 "compare prices across 40 product pages"                   # hard token budget
+```
+
+- **`--allow-domains a.com,b.com`** — a navigation fence. `goto`/`newtab` off the list are refused, and off-fence link clicks or JS redirects bounce back to a blank page. The agent can't reach a search engine to "find an alternative".
+- **`--dry-run`** — navigate, read, and fill normally, but a consequential click (submit, send, pay, publish, …) is withheld; the run reports exactly what *would* have been committed, and commits nothing.
+- **`--confirm`** — same detection, but pauses for an explicit y/N. With no TTY (or under `--json`) the action is denied and a `{"type":"pending_action",…}` event is emitted, so a calling agent can decide and re-run.
+- **`--max-tokens <n>`** — a total input+output budget that warns at 80% and stops cleanly, mirroring `--max-steps`. Context is also bounded by default — stale page snapshots are elided from the conversation, so cost grows linearly with steps, not quadratically.
+- **Fail closed, first class.** If the target is unreachable, closed, or required form data was never provided, the agent stops with `BLOCKED: <reason>` (exit code 4) instead of substituting a different goal or inventing field values.
+
 ## The six primitives
 
 ```
@@ -153,7 +171,7 @@ The model is the harness now, so you expose the substrate's irreducible primitiv
 
 ## Status
 
-Substrate (`look`/`eval`) is validated live against real sites. The agent loop, guards, stores, replay, run, and provider adapters are unit-tested (216 tests, mock provider, no network in tests). The full model-to-browser loop runs once you supply an API key. Requires Node >= 20 and Google Chrome (macOS, Linux, or Windows). Pre-1.0 and moving fast.
+Substrate (`look`/`eval`) is validated live against real sites. The agent loop, guards, stores, replay, run, and provider adapters are unit-tested (239 tests, mock provider, no network in tests). The full model-to-browser loop runs once you supply an API key. Requires Node >= 20 and Google Chrome (macOS, Linux, or Windows). Pre-1.0 and moving fast.
 
 ## Contributing
 
