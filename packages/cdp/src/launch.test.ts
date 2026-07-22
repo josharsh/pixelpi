@@ -2,7 +2,7 @@ import { mkdtempSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { profileHolderClause, resolveChromePath } from "./launch";
+import { headedBrowserArgs, profileHolderClause, resolveChromePath } from "./launch";
 
 describe("resolveChromePath", () => {
   const original = process.env.PIXELPI_CHROME;
@@ -23,6 +23,21 @@ describe("resolveChromePath", () => {
   it("prefers an explicit path over PIXELPI_CHROME", () => {
     process.env.PIXELPI_CHROME = "/env/chrome";
     expect(resolveChromePath("/custom/chrome")).toBe("/custom/chrome");
+  });
+});
+
+describe("headedBrowserArgs", () => {
+  it("opens a plain headed Chrome with no automation surface", () => {
+    const args = headedBrowserArgs("/home/me/.pixelpi/profile", "https://x.com/i/flow/login");
+    expect(args).toContain("--user-data-dir=/home/me/.pixelpi/profile");
+    expect(args).toContain("--no-first-run");
+    expect(args).toContain("--no-default-browser-check");
+    // The start url is the last positional so Chrome opens straight to the login page.
+    expect(args[args.length - 1]).toBe("https://x.com/i/flow/login");
+    // The whole point of the login path: no debug port and no headless — those are exactly what
+    // bot-walls fingerprint. If either reappears, sign-in on X/Google breaks again.
+    expect(args.some((a) => a.includes("--remote-debugging-port"))).toBe(false);
+    expect(args.some((a) => a.includes("--headless"))).toBe(false);
   });
 });
 

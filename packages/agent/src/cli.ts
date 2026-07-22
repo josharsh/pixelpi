@@ -3,7 +3,7 @@ import { stdin, stdout, stderr } from "node:process";
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
-import { launchChrome, type PendingAction } from "@josharsh/pixelpi-cdp";
+import { launchChrome, spawnHeadedBrowser, type PendingAction } from "@josharsh/pixelpi-cdp";
 import { PixelpiProviderError, type ProviderKind } from "@josharsh/pixelpi-ai";
 import type { AgentEvent } from "@josharsh/pixelpi-core";
 import { createPixelpiSession } from "./session";
@@ -681,7 +681,10 @@ async function main(): Promise<void> {
     mkdirSync(profileDir, { recursive: true });
     const url = flags.task || "about:blank";
     stdout.write(`Opening Chrome with profile ${profileDir} …\n`);
-    const chrome = await launchChrome({ headless: false, userDataDir: profileDir, startUrl: url });
+    // Login uses a plain headed Chrome with NO debug port: bot-walls (X, Google) fingerprint the
+    // CDP port launchChrome() opens and block sign-in. The session persists in the profile for
+    // later headless CDP runs. See spawnHeadedBrowser().
+    const chrome = await spawnHeadedBrowser({ userDataDir: profileDir, startUrl: url });
     stdout.write("Sign in to the sites you need, then press Enter here to save the session.\n");
     const rl = createInterface({ input: stdin, output: stdout });
     await new Promise<void>((resolve) => rl.question("", () => resolve()));

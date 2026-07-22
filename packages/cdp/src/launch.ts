@@ -177,6 +177,78 @@ async function resolvePageTarget(base: string, startUrl: string): Promise<Target
   return (await res.json()) as TargetInfo;
 }
 
+/** The flags for a plain, human-driven Chrome — deliberately no debug port and no headless. */
+export function headedBrowserArgs(userDataDir: string, startUrl: string): string[] {
+  return [
+    `--user-data-dir=${userDataDir}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    startUrl,
+  ];
+}
+
+/**
+ * Open a plain, human-driven Chrome for interactive login — NOT for automation. Bot-walls (X,
+ * Google) fingerprint the --remote-debugging-port that launchChrome() opens and block sign-in;
+ * a normal headed Chrome with no CDP attached sails through, and the session persists in
+ * userDataDir for later CDP-driven runs. There is no CdpClient and no WebSocket here by design.
+ *
+ * close() sends SIGTERM and AWAITS 'exit' — Chrome must flush its cookie SQLite on shutdown or
+ * the session won't persist — with a SIGKILL fallback if it refuses to leave.
+ */
+export async function spawnHeadedBrowser(opts: {
+  userDataDir: string;
+  startUrl?: string;
+  executablePath?: string;
+}): Promise<{ proc: ChildProcess; close: () => Promise<void> }> {
+  const executablePath = resolveChromePath(opts.executablePath);
+  const startUrl = opts.startUrl ?? "about:blank";
+  const proc = spawn(executablePath, headedBrowserArgs(opts.userDataDir, startUrl), {
+    stdio: "ignore",
+  });
+
+  let spawnError: FatalError | undefined;
+  proc.once("error", (err) => {
+    spawnError = chromeLaunchError(err as NodeJS.ErrnoException, executablePath);
+  });
+
+  // Give Chrome a beat to either stay up (a real window) or bail out: if the profile is already
+  // open elsewhere, Chrome's singleton hands our command line to that instance and this process
+  // exits almost immediately. A live login window never exits this fast.
+  const exitedEarly = await new Promise<boolean>((resolve) => {
+    let done = false;
+    const finish = (v: boolean) => {
+      if (!done) {
+        done = true;
+        resolve(v);
+      }
+    };
+    proc.once("exit", () => finish(true));
+    setTimeout(() => finish(false), 1200);
+  });
+  if (spawnError) throw spawnError;
+  if (exitedEarly) {
+    const e: FatalError = new Error(
+      `Chrome for profile ${opts.userDataDir} didn't stay open — ${profileHolderClause(opts.userDataDir)}`,
+    );
+    e.fatal = true;
+    throw e;
+  }
+
+  const close = () =>
+    new Promise<void>((resolve) => {
+      if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
+      const hardKill = setTimeout(() => proc.kill("SIGKILL"), 5000);
+      proc.once("exit", () => {
+        clearTimeout(hardKill);
+        resolve();
+      });
+      proc.kill("SIGTERM");
+    });
+
+  return { proc, close };
+}
+
 export async function launchChrome(
   opts: LaunchOptions = {},
 ): Promise<{ client: CdpClient; session: CdpSession; close: () => Promise<void> }> {
