@@ -191,6 +191,11 @@ export async function launchChrome(
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-background-networking",
+    // Driving Chrome over CDP otherwise sets navigator.webdriver=true, the flag bot-walls
+    // (Cloudflare/DataDome/etc.) key on. Disabling the AutomationControlled blink feature clears
+    // it without affecting CDP control, so real-site login/run look human. (Won't beat Google
+    // OAuth, which fingerprints the debug port itself.)
+    "--disable-blink-features=AutomationControlled",
   ];
   if (opts.headless !== false) args.push("--headless=new");
   if (opts.args) args.push(...opts.args);
