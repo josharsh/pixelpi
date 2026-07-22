@@ -1,5 +1,5 @@
 import { execSync, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readlinkSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CdpClient } from "./client";
@@ -110,6 +110,45 @@ export function resolveChromePath(explicit?: string): string {
   throw e;
 }
 
+/**
+ * When a launch fails because the profile is already in use, tell the user exactly how to free it.
+ * Chrome's `SingletonLock` is a symlink whose target is `<hostname>-<pid>` (the pid is the last
+ * `-`-delimited token — hostnames may contain dashes). We resolve that pid and, crucially, check
+ * whether it's still alive: a live owner needs a `kill`, a dead one is a stale lock to `rm`. Falls
+ * back to generic guidance when there's no symlink (Windows, or it was already cleaned up).
+ */
+export function profileHolderClause(userDataDir: string): string {
+  const freshProfile =
+    "or use a fresh profile (omit --profile, or pass --profile=<a different dir>).";
+  let pid: number;
+  try {
+    const target = readlinkSync(join(userDataDir, "SingletonLock"));
+    pid = parseInt(target.slice(target.lastIndexOf("-") + 1), 10);
+  } catch {
+    pid = NaN;
+  }
+  if (!Number.isFinite(pid) || pid <= 0) {
+    return `Another Chrome is already open with this profile — quit it and retry, ${freshProfile}`;
+  }
+  let alive = false;
+  try {
+    process.kill(pid, 0); // signal 0 tests existence without touching the process
+    alive = true;
+  } catch (e) {
+    alive = (e as NodeJS.ErrnoException).code === "EPERM"; // exists but not ours
+  }
+  if (alive) {
+    return (
+      `Chrome (pid ${pid}) is already using this profile — it's likely a headless instance with ` +
+      `no window to close. Free the profile and retry:\n    kill ${pid}\n${freshProfile}`
+    );
+  }
+  return (
+    `a stale lock points at pid ${pid}, which is no longer running. Clear it and retry:\n` +
+    `    rm -f ${join(userDataDir, "Singleton*")}\n${freshProfile}`
+  );
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url} -> ${res.status}`);
@@ -172,8 +211,25 @@ export async function launchChrome(
   proc.once("error", (err) => {
     spawnError = chromeLaunchError(err as NodeJS.ErrnoException, executablePath);
   });
+  // If Chrome exits before we've connected, another instance already owns this profile: Chrome's
+  // singleton handed our command line to it and this process exits (code 21) without ever writing
+  // a debug port. `settled` makes this inert once launch succeeds, so the close()-time kill and any
+  // later crash aren't misread as a launch failure. Detecting it here turns a 15s poll timeout into
+  // an instant, accurate error — and covers the explicit-port path too, which never reads the port file.
+  let settled = false;
+  let exitError: FatalError | undefined;
+  proc.once("exit", (code) => {
+    if (settled) return;
+    const e: FatalError = new Error(
+      `The Chrome we launched for profile ${userDataDir} exited immediately (code ${code}) — ` +
+        profileHolderClause(userDataDir),
+    );
+    e.fatal = true;
+    exitError = e;
+  });
   const guard = () => {
     if (spawnError) throw spawnError;
+    if (exitError) throw exitError;
   };
 
   let client: CdpClient;
@@ -191,7 +247,10 @@ export async function launchChrome(
       guard();
       return fetchJson<VersionInfo>(`${base}/json/version`);
     }, 15000);
-    const target = await poll(() => resolvePageTarget(base, startUrl), 15000);
+    const target = await poll(() => {
+      guard();
+      return resolvePageTarget(base, startUrl);
+    }, 15000);
     client = new CdpClient(target.webSocketDebuggerUrl);
     await client.whenReady();
     // A persistent profile can restore the previous run's page into the tab we attach to,
@@ -200,9 +259,12 @@ export async function launchChrome(
     if (target.url && target.url !== startUrl) {
       await client.send("Page.navigate", { url: startUrl }).catch(() => undefined);
     }
+    settled = true;
   } catch (err) {
+    settled = true;
     if (!proc.killed) proc.kill();
     if (spawnError) throw spawnError;
+    if (exitError) throw exitError;
     const e: FatalError = new Error(
       `Couldn't reach Chrome's debug port for profile ${userDataDir}. ` +
         `Chrome is probably already open with this profile — quit that window and retry, ` +
