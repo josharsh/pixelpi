@@ -347,14 +347,17 @@ describe("run warm-up heal vs fan-out drift isolation", () => {
     expect((sharedTrace.steps[0] as { target: { name: string } }).target.name).toBe("New");
     // ...and the {{query}} template was preserved (not overwritten with row 0's concrete value).
     expect((sharedTrace.steps[1] as { input: { arg: string } }).input.arg).toBe("https://x/?q={{query}}");
-    // Row 2 drift is a per-row outcome, recorded, batch continues, shared trace untouched by it.
+    // Row 2 drifts, spends one mid-run repair, and that repair makes no progress for it (the fake
+    // only repairs row 0). The drift stays a per-row outcome, the batch continues, and the shared
+    // trace keeps the row-0 graft — a failed repair never writes row 2's concrete values into it.
+    expect(summary.healed).toBe(1);
     expect(summary.drift).toBe(1);
     expect(summary.ok).toBe(2);
     const drifted = reporter.outcomes.find((o) => o.index === 2)!;
     expect(drifted.ok).toBe(false);
     expect(drifted.drift).toMatchObject({ step: 0 });
-    // Every per-row replay got a distinct cloned trace object (no shared mutation across rows).
-    expect(seenTraces.size).toBe(3);
+    // Every replay got a distinct cloned trace: 3 rows + row 2's repair attempt.
+    expect(seenTraces.size).toBe(4);
   });
 
   it("passes heal=true only to row 0 and heal=false to fan-out rows", async () => {
@@ -381,6 +384,231 @@ describe("run warm-up heal vs fan-out drift isolation", () => {
     });
     expect(heals[0]).toBe(true); // warm-up row
     expect(heals.slice(1)).toEqual([false, false]); // fan-out rows
+  });
+});
+
+// ── mid-run healing ──────────────────────────────────────────────────────────
+//
+// A trace whose act step targets "Old". The fake replay models a site that changes mid-batch:
+// from `driftsFrom` onward, a strict (heal=false) replay drifts unless the trace it receives has
+// already been repaired to "New". A heal=true replay repairs the clone in place — exactly what
+// replayTrace's microRepair does — which run() then grafts onto the shared template.
+
+/** A trace with an act step (the drift surface) plus a {{query}} nav (the graft must preserve it). */
+function traceWithAct(): Trace {
+  return {
+    version: 1,
+    task: "act then nav {{query}}",
+    model: "m",
+    createdAt: "now",
+    steps: [
+      { tool: "act", op: "click", target: { role: "button", name: "Old", ordinal: 0 } },
+      { tool: "nav", input: { action: "goto", arg: "https://x/?q={{query}}" } },
+    ],
+    params: [{ name: "query", example: "wireless mouse", required: true }],
+  };
+}
+
+/** The row index encoded in a cloned trace's substituted nav arg. */
+function rowOf(trace: Trace): number {
+  return Number((trace.steps[1] as { input: { arg: string } }).input.arg.split("=")[1]);
+}
+
+function actName(trace: Trace): string {
+  return (trace.steps[0] as { target: { name: string } }).target.name;
+}
+
+/**
+ * A replay fake for a site that changes at row `driftsFrom`: the "Old" button is gone from then on.
+ * Like the real replayTrace, healing only kicks in ON drift — a heal=true replay of a trace that
+ * still matches costs nothing. A repair rewrites the clone's target to "New" in place, which is
+ * exactly what microRepair does and what run() grafts back onto the shared template.
+ */
+function shiftingSiteReplay(driftsFrom: number, log: { heals: number[]; strict: number[] }): ReplayFn {
+  return async (o) => {
+    const row = rowOf(o.trace);
+    const stale = row >= driftsFrom && actName(o.trace) === "Old";
+    if (!o.heal) log.strict.push(row);
+    if (!stale) return { ok: true, steps: [], output: `ok-${row}` };
+    if (!o.heal) {
+      return { ok: false, steps: [], drift: { step: 0, reason: `"Old" not found on row ${row}` } };
+    }
+    log.heals.push(row);
+    (o.trace.steps[0] as { target: { role: string; name: string; ordinal: number } }).target = {
+      role: "button",
+      name: "New",
+      ordinal: 0,
+    };
+    return { ok: true, steps: [], output: `healed-${row}` };
+  };
+}
+
+describe("run mid-run healing", () => {
+  it("repairs the trace ONCE when the site changes mid-batch, and later rows reuse the fix", async () => {
+    const log = { heals: [] as number[], strict: [] as number[] };
+    const trace = traceWithAct();
+    const reporter = spyReporter();
+    const summary = await run({
+      trace,
+      tracePath: join(tmp, "t.json"),
+      settings,
+      rows: Array.from({ length: 20 }, (_, i) => ({ query: String(i) })),
+      reporter,
+      concurrency: 1, // sequential: rows 0-4 pass, row 5 drifts and heals, 6-19 reuse the repair
+      outPath: join(tmp, "out.jsonl"),
+      heal: true,
+      failFast: false,
+      timeoutMs: 1000,
+      resume: false,
+      yes: true,
+      replay: shiftingSiteReplay(5, log),
+    });
+
+    // Exactly one model repair for the whole batch, spent on the first row that drifted.
+    expect(summary.healed).toBe(1);
+    expect(log.heals).toEqual([5]);
+    // Every row completed: 0-4 strictly, 5 via its heal, 6-19 against the repaired template.
+    expect(summary.ok).toBe(20);
+    expect(summary.drift).toBe(0);
+    // Rows after the repair passed on their FIRST strict attempt (no per-row retry storm).
+    expect(log.strict.filter((r) => r > 5)).toEqual([6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
+    // The repair reached the shared template, and the {{query}} template survived the graft.
+    expect(actName(trace)).toBe("New");
+    expect((trace.steps[1] as { input: { arg: string } }).input.arg).toBe("https://x/?q={{query}}");
+  });
+
+  it("holds a single heal lock: parallel workers that drift together retry instead of each healing", async () => {
+    const log = { heals: [] as number[], strict: [] as number[] };
+    const base = shiftingSiteReplay(1, log); // every fan-out row drifts until the trace is repaired
+    // Slow every call so all 4 workers are in flight (and drifting) before the first heal lands.
+    const replay: ReplayFn = async (o) => {
+      await new Promise((r) => setTimeout(r, 10));
+      return base(o);
+    };
+    const trace = traceWithAct();
+    const reporter = spyReporter();
+    const summary = await run({
+      trace,
+      tracePath: join(tmp, "t.json"),
+      settings,
+      rows: Array.from({ length: 12 }, (_, i) => ({ query: String(i) })),
+      reporter,
+      concurrency: 4,
+      outPath: join(tmp, "out.jsonl"),
+      heal: true,
+      failFast: false,
+      timeoutMs: 2000,
+      resume: false,
+      yes: true,
+      replay,
+    });
+
+    // Row 0 (warm-up) still matches, so nothing heals there. The 4 workers that drift concurrently
+    // produce exactly ONE repair, not one each — the losers wait on the lock and retry against it.
+    expect(summary.healed).toBe(1);
+    expect(log.heals.length).toBe(1);
+    expect(summary.ok).toBe(12);
+    expect(summary.drift).toBe(0);
+  });
+
+  it("retries for free when a repair landed while this row was replaying (does NOT spend a 2nd heal)", async () => {
+    // Regression: a row that starts before a repair and drifts AFTER it lands must notice the newer
+    // template and retry, not claim its own heal. The heal lock is already released by then, so
+    // waiting on the lock alone is not enough — this is the gap the live 4-worker run exposed.
+    const log = { heals: [] as number[], strict: [] as number[] };
+    const base = shiftingSiteReplay(1, log);
+    const replay: ReplayFn = async (o) => {
+      const row = rowOf(o.trace);
+      // Row 2's strict attempt is slow: it is still in flight while row 1 drifts, heals, and
+      // releases the lock, so row 2 finds a repaired template and a FREE lock.
+      if (row === 2 && !o.heal && actName(o.trace) === "Old") await new Promise((r) => setTimeout(r, 60));
+      return base(o);
+    };
+    const trace = traceWithAct();
+    const reporter = spyReporter();
+    const summary = await run({
+      trace,
+      tracePath: join(tmp, "t.json"),
+      settings,
+      rows: [{ query: "0" }, { query: "1" }, { query: "2" }],
+      reporter,
+      concurrency: 2,
+      outPath: join(tmp, "out.jsonl"),
+      heal: true,
+      failFast: false,
+      timeoutMs: 2000,
+      resume: false,
+      yes: true,
+      replay,
+    });
+
+    expect(summary.healed).toBe(1); // row 1 repaired; row 2 reused it instead of healing again
+    expect(log.heals).toEqual([1]);
+    expect(summary.ok).toBe(3);
+    expect(actName(trace)).toBe("New");
+  });
+
+  it("stops at --max-heals and reports the remaining rows as drift instead of burning the budget", async () => {
+    // A site that is genuinely broken: a heal never makes the target match, so every row drifts.
+    let heals = 0;
+    const replay: ReplayFn = async (o) => {
+      if (o.heal) {
+        heals++;
+        return { ok: false, steps: [], drift: { step: 0, reason: "repair made no progress" } };
+      }
+      return { ok: false, steps: [], drift: { step: 0, reason: "gone" } };
+    };
+    const warnings: string[] = [];
+    const reporter = spyReporter();
+    reporter.warn = (m) => warnings.push(m);
+    const summary = await run({
+      trace: traceWithAct(),
+      tracePath: join(tmp, "t.json"),
+      settings,
+      rows: Array.from({ length: 10 }, (_, i) => ({ query: String(i) })),
+      reporter,
+      concurrency: 2,
+      outPath: join(tmp, "out.jsonl"),
+      heal: true,
+      maxHeals: 2,
+      failFast: false,
+      timeoutMs: 1000,
+      resume: false,
+      yes: true,
+      replay,
+    });
+
+    expect(summary.healed).toBe(2); // budget respected, not one heal per drifted row
+    expect(heals).toBe(3); // 2 mid-run repairs + the warm-up row's own heal
+    expect(summary.drift).toBe(10); // every row still reported, batch never hung
+    expect(warnings.some((w) => /heal budget spent \(2\)/.test(w))).toBe(true);
+  });
+
+  it("never heals mid-run without --heal: drifted rows are reported as before", async () => {
+    const log = { heals: [] as number[], strict: [] as number[] };
+    const trace = traceWithAct();
+    const reporter = spyReporter();
+    const summary = await run({
+      trace,
+      tracePath: join(tmp, "t.json"),
+      settings,
+      rows: Array.from({ length: 6 }, (_, i) => ({ query: String(i) })),
+      reporter,
+      concurrency: 1,
+      outPath: join(tmp, "out.jsonl"),
+      heal: false,
+      failFast: false,
+      timeoutMs: 1000,
+      resume: false,
+      yes: true,
+      replay: shiftingSiteReplay(3, log),
+    });
+
+    expect(summary.healed).toBe(0);
+    expect(log.heals).toEqual([]);
+    expect(summary.drift).toBe(3); // rows 3,4,5
+    expect(summary.ok).toBe(3);
+    expect(actName(trace)).toBe("Old"); // the shared template was never touched
   });
 });
 

@@ -148,7 +148,9 @@ function summaryLine(s: RunSummary): string {
   const parts = [`${s.ok} ok`, `${s.drift} drift`, `${s.error} error`];
   const aborted = s.aborted ? ", aborted" : "";
   const skipped = s.skipped > 0 ? `, ${s.skipped} skipped` : "";
-  return `completed ${s.ran}/${s.total} rows: ${parts.join(", ")}${skipped}${aborted} in ${humanMs(s.ms)}`;
+  // Mid-run repairs are the only model cost in an otherwise free batch, so name them when spent.
+  const healed = s.healed > 0 ? `, ${s.healed} healed` : "";
+  return `completed ${s.ran}/${s.total} rows: ${parts.join(", ")}${skipped}${healed}${aborted} in ${humanMs(s.ms)}`;
 }
 
 // ── ANSI live dashboard (TTY default) ────────────────────────────────────────────

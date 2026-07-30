@@ -20,6 +20,7 @@ function summary(over: Partial<RunSummary> = {}): RunSummary {
     ok: 3,
     drift: 0,
     error: 0,
+    healed: 0,
     ms: 4500,
     aborted: false,
     outPath: "run_out.jsonl",

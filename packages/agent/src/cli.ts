@@ -53,6 +53,8 @@ export interface Flags {
   /** Save a trace of this run: undefined = off, "" = auto-slug the task, or a name/path. */
   record?: string;
   heal: boolean;
+  /** `run --heal`: max mid-run repairs for the batch (default DEFAULT_MAX_HEALS). */
+  maxHeals?: number;
   /** Set when "replay" is the first positional; holds the trace name/path (or "" if none given). */
   replay?: string;
   /** Set when "run" is the first positional; holds the trace name/path (or "" if none given). */
@@ -159,6 +161,7 @@ export function parseArgs(argv: string[]): Flags {
         else f.record = "";
         break;
       case "--heal": f.heal = true; break;
+      case "--max-heals": { const n = parseInt(argv[++i]!, 10); if (Number.isFinite(n) && n >= 0) f.maxHeals = n; break; }
       case "--param":
       case "--vars": {
         // Declare a param: name=value (repeatable). --param is canonical; --vars is the alias.
@@ -270,7 +273,8 @@ FLAGS
       --record [name]   save trace of this run for replay (omit name to auto-slug)
       --param name=val  with --record: declare a value you used as an input named <name>
                         (repeatable; e.g. --param query=rust). --vars is an alias.
-      --heal            on replay/run: self-heal on drift (run heals only the warm-up row)
+      --heal            on replay/run: self-heal on drift. In a run, the warm-up row heals and a
+                        mid-run drift repairs the shared trace once; the other rows reuse the fix
 
 RUN FLAGS (pixelpi run <trace> ...)
       --over <file>     dataset to map over: .csv (header row) or .jsonl/.ndjson
@@ -280,6 +284,8 @@ RUN FLAGS (pixelpi run <trace> ...)
       --resume          skip rows already present in the out file
       --key <column>    stable identity column for resume (default: row index)
       --timeout <ms>    per-row timeout (default: 60000)
+      --max-heals <n>   with --heal: mid-run repair budget for the batch (default: 3).
+                        Past it, drifted rows are reported instead of repaired
       --fail-fast       abort the batch on the first error (default: collect all)
       --out-key <key>   read each row's output from the store at this key
       --watch <index>   run one row headed (visible) while the rest stay headless
@@ -627,6 +633,7 @@ async function handleRun(flags: Flags, interactive: boolean): Promise<void> {
       concurrency,
       outPath: flags.out ?? "run-out.jsonl",
       heal: flags.heal,
+      maxHeals: flags.maxHeals,
       failFast: flags.failFast,
       timeoutMs: flags.timeout && flags.timeout > 0 ? flags.timeout : 60000,
       resume: flags.resume,
