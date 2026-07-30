@@ -12,3 +12,4 @@
 
 - [ ] `pnpm test` and `pnpm -r typecheck` pass
 - [ ] Docs/README updated if behavior changed
+- [ ] `CHANGELOG.md` has an `## [Unreleased]` entry if the change is user-visible

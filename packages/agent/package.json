@@ -1,6 +1,6 @@
 {
   "name": "pixelpi",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "pi for the browser: a minimal browser-agent CLI and harness over raw Chrome DevTools Protocol, any model.",
   "type": "module",
   "types": "./src/index.ts",
@@ -56,6 +56,8 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
+    "sync-readme": "cp ../../README.md README.md",
+    "prepack": "pnpm sync-readme",
     "prepublishOnly": "pnpm build"
   },
   "dependencies": {

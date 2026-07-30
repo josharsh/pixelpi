@@ -50,6 +50,8 @@ pnpm dlx tsx examples/primitives-only.ts
 3. Make sure `pnpm test`, `pnpm typecheck`, and `pnpm build` pass.
 4. Open the PR against `main` and fill out the template.
 
+If your change is user-visible (a new flag, changed behavior, a fix someone would notice), add a bullet under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md). Don't pick a version number — the maintainer does that at release time.
+
 Versioning and publishing to npm are handled manually by the maintainer — you don't need to bump versions.
 
 ## Code style

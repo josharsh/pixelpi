@@ -26,7 +26,7 @@ pixelpi lets any AI model use a real web browser, and it reads each page in abou
 - Read any page in **~2,000 tokens**, 37x to 100x fewer than raw DOM.
 - **Record** a solved task once; **replay** it with no model, deterministically, for free.
 - **Run** a recorded task across a CSV or JSONL **in parallel**, about 0 tokens per row.
-- **Self-heals**: when a page changes, the model fixes one step and every other row reuses it.
+- **Self-heals mid-batch**: when a page changes at row 900, the model fixes one step once and every remaining row reuses it.
 - **Callable from code, readable by other AI agents** (typed SDK plus a clean `--json` contract).
 - **Guardrailed**: a domain fence, a dry-run/confirm gate before anything irreversible, token budgets, and a fail-closed `BLOCKED` outcome — enforced in the harness, not the prompt.
 
@@ -90,11 +90,14 @@ A parametrized trace is a function. Record it once with an example input, then r
 
 ```bash
 pixelpi "search Hacker News for rust" --record hn   # then name "rust" as the input q
-pixelpi run hn --query rust                          # one input
-pixelpi run hn --over queries.csv --concurrency 8    # map over a CSV/JSONL, in parallel
+pixelpi run hn --query rust                            # one input
+pixelpi run hn --over queries.csv --concurrency 8      # map over a CSV/JSONL, in parallel
+pixelpi run hn --over queries.csv --heal               # repair the trace if the site changes mid-run
 ```
 
-Each row runs in its own headless Chrome, bounded by `--concurrency` (default 4). Outcomes stream to a JSONL file (`--out`), `--resume` skips rows already done, and the first row runs alone as a warm-up so a single `--heal` repair benefits every other row. A 5,000-row job costs one model run plus, at most, a handful of repairs.
+Each row runs in its own headless Chrome, bounded by `--concurrency` (default 4). Outcomes stream to a JSONL file (`--out`), and `--resume` skips rows already done.
+
+Sites change mid-batch. Under `--heal`, the first row runs alone as a warm-up, and if a later row drifts — an A/B test renames a button, a banner appears at row 900 — one worker repairs the shared trace with the model and every other row reuses that fix, including the ones that already drifted waiting for it. `--max-heals` (default 3) caps the repairs: past it, drifted rows are reported rather than repaired, so a genuinely broken site can't cost one model run per row. A 5,000-row job costs one model run plus, at most, a handful of repairs.
 
 ## Describe a trace (for humans and agents)
 
