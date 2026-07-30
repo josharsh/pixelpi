@@ -82,6 +82,7 @@ describe("loadTrace as a callable", () => {
         ok: opts.rows.length,
         drift: 0,
         error: 0,
+        healed: 0,
         ms: 1,
         aborted: false,
         outPath: "",
@@ -101,7 +102,7 @@ describe("loadTrace as a callable", () => {
           outcome: { index, input: opts.rows[index]!, ok: true, output: opts.rows[index]!.q, ms: 1 },
         });
       }
-      return { total: 3, ran: 3, skipped: 0, ok: 3, drift: 0, error: 0, ms: 1, aborted: false, outPath: "" };
+      return { total: 3, ran: 3, skipped: 0, ok: 3, drift: 0, error: 0, healed: 0, ms: 1, aborted: false, outPath: "" };
     };
     const fn = loadTrace(path, { run: outOfOrder });
     const rows = await fn.over([{ q: "a" }, { q: "b" }, { q: "c" }]);

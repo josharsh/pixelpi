@@ -5,7 +5,12 @@
 // Orchestration (see EXECUTION MODEL): load data, validate required params BEFORE any browser,
 // run row 0 ALONE (heal-once writeback to the shared trace, ETA seed), optionally prompt, then
 // fan out rows 1..N-1 on a bounded worker pool with per-row isolation (clone + substitute, fresh
-// MemoryStore, disposable-or-copied profile, heal OFF), streaming each outcome to the out JSONL.
+// MemoryStore, disposable-or-copied profile), streaming each outcome to the out JSONL.
+//
+// Fan-out rows replay strictly. When one drifts under --heal, ONE worker takes a heal lock, repairs
+// that row with the model, grafts the repair onto the shared template, and every other worker that
+// drifted meanwhile retries against the repaired template instead of failing. Bounded by maxHeals,
+// so a genuinely broken site costs a handful of model runs, not one per row.
 //
 // replayTrace and the profile copy are injected so this is testable without Chrome or the network.
 
@@ -19,6 +24,12 @@ import { replayTrace as defaultReplayTrace, type ReplayResult, type ReplayStep }
 import { substituteVars, validateParams } from "./template";
 import { saveTrace, type Trace, type TraceStep } from "./trace";
 import type { Reporter } from "./dashboard";
+
+/**
+ * Default mid-run repair budget. A site that changed once needs one repair; a site that keeps
+ * drifting is broken, and burning a model run per row would cost more than the batch is worth.
+ */
+export const DEFAULT_MAX_HEALS = 3;
 
 // ── public result types ───────────────────────────────────────────────────────
 
@@ -41,6 +52,8 @@ export interface RunSummary {
   ok: number;
   drift: number;
   error: number;
+  /** Mid-run model repairs spent during the fan-out (excludes the warm-up row's own healing). */
+  healed: number;
   ms: number;
   aborted: boolean;
   /** Where row outcomes were streamed. */
@@ -68,6 +81,11 @@ export interface RunOptions {
   /** Where to stream row outcomes as JSONL. Omit (SDK batch) to keep results in memory only. */
   outPath?: string;
   heal: boolean;
+  /**
+   * Max mid-run repairs during the fan-out (the warm-up row is separate and always heals under
+   * --heal). Past this, drifted rows report drift as before. Default DEFAULT_MAX_HEALS.
+   */
+  maxHeals?: number;
   failFast: boolean;
   timeoutMs: number;
   /** Resume: skip rows already present in the out file (by index, or by `key` column). */
@@ -347,13 +365,13 @@ interface RowContext {
   replay: ReplayFn;
   /** Resolved profile dir for this row (the worker's copy, or the original/undefined). */
   profileDir?: string;
-  heal: boolean; // row 0 may heal; fan-out rows do not (per spec)
+  heal: boolean; // the warm-up row, and any mid-run repair attempt; strict fan-out rows are false
   /**
-   * Where replay may persist a heal. For the warm-up row this is a THROWAWAY path so replay never
+   * Where replay may persist a heal. For a healing row this is a THROWAWAY path so replay never
    * writes concrete (substituted) values to the shared trace; run() grafts the heal back instead.
    */
   healTracePath: string;
-  /** Warm-up only: receives the executed clone so run() can graft heals onto the shared template. */
+  /** Healing rows only: receives the executed clone so run() can graft it onto the shared template. */
   onExecutedTrace?: (executed: Trace) => void;
   parentSignal?: AbortSignal;
 }
@@ -362,8 +380,8 @@ interface RowContext {
  * Run one row in isolation. Clones+substitutes the trace, builds a fresh MemoryStore, runs replay
  * with a per-row timeout that ACTUALLY aborts (its own controller chained to the parent signal),
  * and captures output. The profile copy lives one level up (per worker), so this is the hot path.
- * A fan-out drift is a per-row outcome and never rewrites the shared trace (substituteVars already
- * returns a clone, heal is OFF for fan-out rows, and the warm-up uses a throwaway tracePath).
+ * A row never rewrites the shared trace itself: substituteVars returns a clone, strict rows have
+ * heal OFF, and a healing row persists to a throwaway tracePath that run() grafts back.
  */
 async function runRow(rc: RowContext): Promise<RowOutcome> {
   const { index, worker, row, opts, replay } = rc;
@@ -427,8 +445,9 @@ async function runRow(rc: RowContext): Promise<RowOutcome> {
 
 /**
  * Run a parametrized trace over rows. Validates required params before launching anything, runs
- * row 0 as a warm-up (with heal if requested, the ONLY place the shared trace is rewritten), seeds
- * the ETA, optionally prompts, then fans out rows 1..N-1 on a bounded pool. Returns the summary.
+ * row 0 as a warm-up (healing if requested), seeds the ETA, optionally prompts, then fans out rows
+ * 1..N-1 on a bounded pool. Under --heal, a mid-run drift takes the heal lock, repairs the shared
+ * trace once, and other drifted rows retry against the repair. Returns the summary.
  */
 export async function run(opts: RunOptions): Promise<RunSummary> {
   const replay = opts.replay ?? (defaultReplayTrace as ReplayFn);
@@ -481,13 +500,15 @@ export async function run(opts: RunOptions): Promise<RunSummary> {
     }
   }
 
-  // All temp dirs (the warm-up throwaway trace + every per-worker profile copy) are removed in the
+  // All temp dirs (the throwaway heal trace + every per-worker profile copy) are removed in the
   // finally below, so a throw or early return anywhere in the orchestration never orphans them.
-  let warmupTempTrace: string | undefined;
+  // One throwaway path serves every heal: heals are serialized by the heal lock, so they cannot
+  // collide on it.
+  let healTempTrace: string | undefined;
   const cleanup = (): void => {
-    if (warmupTempTrace) {
+    if (healTempTrace) {
       try {
-        rmSync(join(warmupTempTrace, ".."), { recursive: true, force: true });
+        rmSync(join(healTempTrace, ".."), { recursive: true, force: true });
       } catch {
         /* best-effort cleanup of the throwaway dir */
       }
@@ -510,6 +531,14 @@ export async function run(opts: RunOptions): Promise<RunSummary> {
 
   const counts = { ok: 0, drift: 0, error: 0 };
   let aborted = false;
+  // Mid-run heal state. `healLock` is held by the one worker currently repairing; `traceGeneration`
+  // bumps ONLY when a repair actually changed the shared template, so waiters can tell a real
+  // repair from a heal that produced nothing (and skip a pointless retry).
+  const maxHeals = opts.maxHeals ?? DEFAULT_MAX_HEALS;
+  let healLock: Promise<void> | null = null;
+  let healsUsed = 0;
+  let traceGeneration = 0;
+  let budgetWarned = false;
   const ac = new AbortController();
   // If a parent signal aborts (SIGINT), record it in the summary AND abort our internal controller,
   // so the CLI's `summary.aborted && ac.signal.aborted` maps a real Ctrl-C to exit code 130.
@@ -548,6 +577,7 @@ export async function run(opts: RunOptions): Promise<RunSummary> {
     ok: counts.ok,
     drift: counts.drift,
     error: counts.error,
+    healed: healsUsed,
     ms: Date.now() - t0,
     aborted,
     outPath: opts.outPath ?? "",
@@ -566,8 +596,17 @@ export async function run(opts: RunOptions): Promise<RunSummary> {
     // ONLY place the shared trace is rewritten, and it keeps the template's {{var}} values.
     const first = pending[0]!;
     if (opts.heal) {
-      warmupTempTrace = join(mkdtempSync(join(tmpdir(), "pixelpi-warmup-")), "trace.json");
+      healTempTrace = join(mkdtempSync(join(tmpdir(), "pixelpi-heal-")), "trace.json");
     }
+    // Graft a heal from an executed clone back onto the shared template and persist it. Shared by
+    // the warm-up row and every mid-run repair; the ONLY place the shared trace is rewritten.
+    const writeBackHeal = (executed: Trace): void => {
+      if (!opts.heal) return;
+      if (graftHeals(opts.trace, executed)) {
+        saveTrace(opts.tracePath, opts.trace);
+        traceGeneration++;
+      }
+    };
     const row0 = await runRow({
       index: first.index,
       worker: 0,
@@ -576,16 +615,10 @@ export async function run(opts: RunOptions): Promise<RunSummary> {
       opts,
       replay,
       profileDir: profileFor(0),
-      healTracePath: warmupTempTrace ?? opts.tracePath,
+      healTracePath: healTempTrace ?? opts.tracePath,
       parentSignal: ac.signal,
       heal: opts.heal,
-      onExecutedTrace: (executed) => {
-        // Heal-once writeback: graft any repaired act/fill targets onto the shared template,
-        // keeping its {{var}} values, then persist. Done only for the warm-up row.
-        if (opts.heal && graftHeals(opts.trace, executed)) {
-          saveTrace(opts.tracePath, opts.trace);
-        }
-      },
+      onExecutedTrace: writeBackHeal,
     });
     ran++;
     tally(row0);
@@ -602,11 +635,95 @@ export async function run(opts: RunOptions): Promise<RunSummary> {
       }
     }
 
-    // 5. Fan out rows 1..N-1 on a bounded worker pool. heal is OFF for fan-out rows, so they may
-    // repair locally for their own completion but never rewrite the shared trace (throwaway path).
+    // 5. Fan out rows 1..N-1 on a bounded worker pool. Rows replay STRICTLY (heal off) on the fast
+    // path; a drift under --heal escalates to the shared mid-run repair below.
     if (!aborted && rest.length > 0) {
       let next = 0;
       const poolSize = Math.max(1, Math.min(concurrency, rest.length));
+
+      const replayRow = (item: { row: Record<string, unknown>; index: number }, workerId: number, heal: boolean) =>
+        runRow({
+          index: item.index,
+          worker: workerId,
+          row: item.row,
+          trace: opts.trace,
+          opts,
+          replay,
+          profileDir: profileFor(workerId),
+          // Strict rows never persist, so the path is unused; a healing row writes its CONCRETE
+          // substituted values to the throwaway path and run() grafts the repair back instead.
+          healTracePath: heal ? (healTempTrace ?? opts.tracePath) : opts.tracePath,
+          parentSignal: ac.signal,
+          heal,
+          onExecutedTrace: heal ? writeBackHeal : undefined,
+        });
+
+      /**
+       * A fan-out row drifted. The site probably changed mid-batch, so repair the shared trace ONCE
+       * and let every other drifted row reuse that repair instead of paying for its own:
+       *   - the template already moved since this row started -> retry strictly against it (free).
+       *   - a repair is in flight -> wait it out, then re-check.
+       *   - neither, and budget remains -> claim a slot and heal this row with the model.
+       * Returns the row's final outcome: the strict drift if nothing could be done.
+       *
+       * The loop cannot spin: each pass either consumes a template generation or a heal slot (both
+       * bounded by maxHeals), or returns.
+       */
+      const healAndRetry = async (
+        item: { row: Record<string, unknown>; index: number },
+        workerId: number,
+        firstDrift: RowOutcome,
+        genBefore: number,
+      ): Promise<RowOutcome> => {
+        let drifted = firstDrift;
+        let gen = genBefore;
+        for (;;) {
+          if (ac.signal.aborted) return drifted;
+
+          // Someone repaired the template since this row began replaying (it may have landed while
+          // we were drifting, not just while we waited). Retry against the repair for free.
+          if (traceGeneration > gen) {
+            gen = traceGeneration;
+            const retried = await replayRow(item, workerId, false);
+            if (!retried.drift) return retried;
+            drifted = retried; // still stale against the newest template; fall through
+            continue;
+          }
+
+          // A repair is in flight for the same change. Wait rather than spend a second model run.
+          if (healLock) {
+            await healLock;
+            continue;
+          }
+
+          if (healsUsed >= maxHeals) {
+            if (!budgetWarned) {
+              budgetWarned = true;
+              opts.reporter.warn?.(
+                `heal budget spent (${maxHeals}); remaining drifted rows are reported, not repaired. ` +
+                  `Re-record with --record, or raise --max-heals.`,
+              );
+            }
+            return drifted;
+          }
+
+          // Claiming is synchronous with the checks above (no await in between), so two workers can
+          // never both take the lock.
+          healsUsed++;
+          opts.reporter.warn?.(
+            `row ${item.index} drifted at step ${drifted.drift?.step ?? "?"}; ` +
+              `repairing the trace (heal ${healsUsed}/${maxHeals}) so the remaining rows reuse the fix.`,
+          );
+          let release!: () => void;
+          healLock = new Promise<void>((r) => (release = r));
+          try {
+            return await replayRow(item, workerId, true);
+          } finally {
+            healLock = null;
+            release();
+          }
+        }
+      };
 
       const worker = async (workerId: number): Promise<void> => {
         while (true) {
@@ -614,20 +731,11 @@ export async function run(opts: RunOptions): Promise<RunSummary> {
           const slot = next++;
           if (slot >= rest.length) return;
           const item = rest[slot]!;
-          const outcome = await runRow({
-            index: item.index,
-            worker: workerId,
-            row: item.row,
-            trace: opts.trace,
-            opts,
-            replay,
-            profileDir: profileFor(workerId),
-            // Fan-out rows have heal OFF, so replay never persists; the path is unused but kept
-            // consistent with the warm-up signature.
-            healTracePath: opts.tracePath,
-            parentSignal: ac.signal,
-            heal: false,
-          });
+          const genBefore = traceGeneration;
+          let outcome = await replayRow(item, workerId, false);
+          if (opts.heal && outcome.drift && !ac.signal.aborted) {
+            outcome = await healAndRetry(item, workerId, outcome, genBefore);
+          }
           ran++;
           tally(outcome);
           opts.reporter.onRowDone({ worker: workerId, outcome });
