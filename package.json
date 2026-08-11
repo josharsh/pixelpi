@@ -18,7 +18,7 @@
     "check:publish": "pnpm -r --filter './packages/*' exec publint"
   },
   "devDependencies": {
-    "@arethetypeswrong/cli": "^0.18.3",
+    "@arethetypeswrong/cli": "^0.18.4",
     "@josharsh/pixelpi-ai": "workspace:*",
     "@josharsh/pixelpi-cdp": "workspace:*",
     "@josharsh/pixelpi-core": "workspace:*",
