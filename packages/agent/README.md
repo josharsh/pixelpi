@@ -32,7 +32,7 @@ It's a browser for agents that have other things to do with their context window
 - **3.3× less per page**, across six real sites, counting the whole page with every element still addressable. [The numbers, and what they don't prove →](bench/)
 - **Guardrails in the harness, not the prompt.** A domain fence, a dry-run/confirm gate in front of anything irreversible, token budgets, and a fail-closed `BLOCKED` outcome. A system prompt is a suggestion; a tool that refuses is a guarantee.
 - **Record once, replay for free.** When a task finally works, save it as a trace and run it again with no model in the loop — across a CSV, in parallel, healing itself when the page shifts under you.
-- **An MCP server in one line of config.** `npx -y pixelpi mcp`, and your existing Claude Code or Cursor subscription drives it. No key to set up.
+- **An MCP server in one line of config.** `npx -y pixelpi@latest mcp`, and your existing Claude Code or Cursor subscription drives it. No key to set up.
 - **Meant to be driven by other software.** Typed SDK, and a `--json` contract clean enough for another agent to parse without heroics.
 
 > Context is the scarce resource in an agent loop. Every token your browser tool spends describing itself is a token the agent doesn't get for the actual work.
@@ -56,12 +56,14 @@ One line of config, and your agent's browser costs 1,196 tokens of definitions i
 ```json
 {
   "mcpServers": {
-    "pixelpi": { "command": "npx", "args": ["-y", "pixelpi", "mcp"] }
+    "pixelpi": { "command": "npx", "args": ["-y", "pixelpi@latest", "mcp"] }
   }
 }
 ```
 
 That's `~/.claude.json` for Claude Code, or Cursor's `mcp.json`. Chrome starts on the first tool call, not at startup, so an idle server costs you nothing but a few MB of Node.
+
+The `@latest` is load-bearing: `npx` will happily run an old `pixelpi` you already installed globally instead of fetching a current one, and anything before 0.6.0 has no `mcp` subcommand — it'll read "mcp" as a task and try to go do it. Pinning the version skips that entirely.
 
 The guardrails and the profile come along:
 
@@ -70,7 +72,7 @@ The guardrails and the profile come along:
   "mcpServers": {
     "pixelpi": {
       "command": "npx",
-      "args": ["-y", "pixelpi", "mcp", "--allow-domains", "github.com", "--dry-run", "--profile"]
+      "args": ["-y", "pixelpi@latest", "mcp", "--allow-domains", "github.com", "--dry-run", "--profile"]
     }
   }
 }

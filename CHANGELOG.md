@@ -11,6 +11,16 @@ packages version independently and are only listed when they changed.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-08-11
+
+### Fixed
+
+- **The MCP config in the README now pins `pixelpi@latest`.** `npx` prefers a `pixelpi` already
+  on your PATH over fetching a current one, so anyone with an older global install got that
+  instead — and versions before 0.6.0 have no `mcp` subcommand, so they read "mcp" as a task
+  and started an agent run, printing human-facing output onto stdout and corrupting the
+  JSON-RPC framing. Pinning the version sidesteps it.
+
 ## [0.6.0] — 2026-08-11
 
 ### Added
@@ -183,7 +193,8 @@ Initial release, published as `pixelpi` plus `@josharsh/pixelpi-{ai,core,cdp}`.
 - A provider-agnostic agent loop (Anthropic and OpenAI), an interactive REPL, guided onboarding,
   and a reproducible token benchmark in [`bench/`](bench).
 
-[Unreleased]: https://github.com/josharsh/pixelpi/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/josharsh/pixelpi/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/josharsh/pixelpi/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/josharsh/pixelpi/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/josharsh/pixelpi/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/josharsh/pixelpi/compare/v0.3.2...v0.4.0
