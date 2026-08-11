@@ -14,12 +14,22 @@
  * because a stray character on stdout desynchronizes the framing and the client drops us.
  */
 import { createInterface } from "node:readline";
+import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { launchChrome, createBrowserTools } from "@josharsh/pixelpi-cdp";
 import type { CdpSession } from "@josharsh/pixelpi-cdp";
 import { JsonFileStore, MemoryStore, type Tool, type ToolContext } from "@josharsh/pixelpi-core";
 
 /** Protocol version we speak. We echo the client's instead when it names one. */
 const PROTOCOL_VERSION = "2025-06-18";
+
+/**
+ * MCP clients launch servers with the CWD set to whatever project the user has open, so the
+ * CLI's `.pixelpi-store.json` default would drop a file into someone's repo uninvited.
+ * Keep it in the home directory unless --store says otherwise.
+ */
+const DEFAULT_MCP_STORE = join(homedir(), ".pixelpi", "store.json");
 
 export interface McpServerOptions {
   headless?: boolean;
@@ -99,9 +109,11 @@ export function createMcpServer(opts: McpServerOptions = {}) {
           headless: opts.headless !== false,
           userDataDir: opts.profileDir,
         });
+        const storePath = opts.storePath ?? DEFAULT_MCP_STORE;
+        mkdirSync(dirname(storePath), { recursive: true });
         const tools = createBrowserTools({
           session,
-          store: new JsonFileStore(opts.storePath ?? ".pixelpi-store.json"),
+          store: new JsonFileStore(storePath),
           allowDomains: opts.allowDomains,
           dryRun: opts.dryRun,
           confirmAction: opts.confirm ? async () => false : undefined,

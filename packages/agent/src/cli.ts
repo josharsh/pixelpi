@@ -686,7 +686,7 @@ async function main(): Promise<void> {
     await runMcpServer({
       headless: flags.headless !== false,
       profileDir: resolveProfile(flags.profile),
-      storePath: flags.store ?? ".pixelpi-store.json",
+      storePath: flags.store, // undefined → the MCP default in the home dir, not the CWD
       allowDomains: flags.allowDomains,
       dryRun: flags.dryRun,
       confirm: flags.confirm,
