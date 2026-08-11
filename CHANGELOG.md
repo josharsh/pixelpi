@@ -11,6 +11,13 @@ packages version independently and are only listed when they changed.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-11
+
+Also releases `@josharsh/pixelpi-cdp` 0.3.0. `look()`'s output changes shape in this release:
+fewer, denser refs, different ref numbering, and a new header format. Recorded traces resolve
+targets by accessibility role and name rather than by ref number, so they keep working — and
+traces that pointed at an element beyond ref 200 can resolve for the first time.
+
 ### Added
 
 - **`look` takes an `offset`.** A single call still renders 200 refs, but the header now reports the
@@ -153,7 +160,8 @@ Initial release, published as `pixelpi` plus `@josharsh/pixelpi-{ai,core,cdp}`.
 - A provider-agnostic agent loop (Anthropic and OpenAI), an interactive REPL, guided onboarding,
   and a reproducible token benchmark in [`bench/`](bench).
 
-[Unreleased]: https://github.com/josharsh/pixelpi/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/josharsh/pixelpi/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/josharsh/pixelpi/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/josharsh/pixelpi/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/josharsh/pixelpi/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/josharsh/pixelpi/compare/v0.3.0...v0.3.1
