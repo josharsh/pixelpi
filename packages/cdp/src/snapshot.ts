@@ -19,6 +19,7 @@ export interface AXNode {
   backendDOMNodeId?: number;
 }
 
+/** How many refs a single look() renders. Compaction itself is uncapped — see look(). */
 export const MAX_REFS = 200;
 
 const INTERACTIVE_ROLES = new Set([
@@ -52,6 +53,15 @@ const NAMED_ROLES = new Set([
   "rowheader",
   "listitem",
 ]);
+
+// Roles whose repeated values are positionally meaningful — a table of "N/A" cells
+// still needs every cell. Exempt from de-duplication.
+const TABLE_ROLES = new Set(["cell", "columnheader", "rowheader", "gridcell"]);
+
+/** A name carries information only if it has a letter or a digit somewhere. */
+const HAS_CONTENT = /[\p{L}\p{N}]/u;
+
+const normalizeName = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
 
 // AX property names that map to compact boolean state flags.
 const FLAG_PROPS = ["checked", "disabled", "focused", "expanded", "selected"] as const;
@@ -87,19 +97,27 @@ export interface CompactionResult {
   refs: Ref[];
   /** ref id -> resolution info needed by act/fill. */
   refMap: Map<number, { backendDOMNodeId: number; role: string; name: string }>;
-  truncated: boolean;
 }
 
 /**
  * PURE: turn an Accessibility.getFullAXTree node array into ref-indexed entries.
  * Drops ignored nodes; keeps interactive roles, and named nodes in NAMED_ROLES.
- * Assigns sequential ref ids starting at 1. Caps at MAX_REFS.
+ *
+ * Two passes of noise removal, because the AX tree describes the same content twice —
+ * once as an aggregating container (a table cell holding a whole HN row) and again as
+ * the decomposed links and text inside it:
+ *   - separator-only names (" | ", " (", ")") are dropped; they cost tokens and say nothing
+ *   - a non-interactive node repeating a name already emitted is dropped
+ * Interactive nodes are never de-duplicated: two buttons both named "Submit" are two
+ * different things to click. Table roles are exempt too — repetition is data there.
+ *
+ * Uncapped by design. look() windows the result so nothing is unreachable.
  */
 export function compactAxTree(nodes: AXNode[]): CompactionResult {
   const refs: Ref[] = [];
   const refMap = new Map<number, { backendDOMNodeId: number; role: string; name: string }>();
+  const seen = new Set<string>();
   let counter = 0;
-  let truncated = false;
 
   for (const node of nodes) {
     if (node.ignored) continue;
@@ -113,10 +131,12 @@ export function compactAxTree(nodes: AXNode[]): CompactionResult {
 
     if (node.backendDOMNodeId == null) continue;
 
-    if (refs.length >= MAX_REFS) {
-      truncated = true;
-      break;
+    if (!isInteractive) {
+      if (!HAS_CONTENT.test(name)) continue;
+      const key = normalizeName(name);
+      if (!TABLE_ROLES.has(role) && seen.has(key)) continue;
     }
+    if (name) seen.add(normalizeName(name));
 
     const ref = ++counter;
     const state = compactState(node);
@@ -124,7 +144,7 @@ export function compactAxTree(nodes: AXNode[]): CompactionResult {
     refMap.set(ref, { backendDOMNodeId: node.backendDOMNodeId, role, name });
   }
 
-  return { refs, refMap, truncated };
+  return { refs, refMap };
 }
 
 /** Render refs as compact "[ref] role \"name\" (state)" lines. */

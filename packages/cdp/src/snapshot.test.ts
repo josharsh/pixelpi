@@ -56,12 +56,11 @@ const tree: AXNode[] = [
 ];
 
 describe("compactAxTree", () => {
-  const { refs, refMap, truncated } = compactAxTree(tree);
+  const { refs, refMap } = compactAxTree(tree);
 
   it("keeps only interactive + named-role nodes that are not ignored and have a backend id", () => {
     expect(refs.map((r) => r.role)).toEqual(["button", "textbox", "checkbox", "heading"]);
     expect(refs.map((r) => r.name)).toEqual(["Sign in", "Email", "Remember me", "Welcome"]);
-    expect(truncated).toBe(false);
   });
 
   it("assigns sequential ref ids from 1", () => {
@@ -107,8 +106,8 @@ describe("compactState", () => {
   });
 });
 
-describe("compactAxTree truncation", () => {
-  it("caps at 200 refs and flags truncation", () => {
+describe("compactAxTree is uncapped", () => {
+  it("emits every qualifying node so look() can page past MAX_REFS", () => {
     const many: AXNode[] = Array.from({ length: 250 }, (_, i) =>
       ax({
         nodeId: String(i),
@@ -117,8 +116,58 @@ describe("compactAxTree truncation", () => {
         backendDOMNodeId: i + 1,
       }),
     );
-    const { refs, truncated } = compactAxTree(many);
-    expect(refs.length).toBe(200);
-    expect(truncated).toBe(true);
+    const { refs, refMap } = compactAxTree(many);
+    expect(refs.length).toBe(250);
+    expect(refs[249].name).toBe("b249");
+    // act/fill must be able to resolve a ref that no single look() rendered.
+    expect(refMap.get(250)?.backendDOMNodeId).toBe(250);
   });
 });
+
+describe("compactAxTree noise removal", () => {
+  const node = (role: string, name: string, id: number) =>
+    ax({
+      nodeId: String(id),
+      role: { type: "role", value: role },
+      name: { type: "computedString", value: name },
+      backendDOMNodeId: id,
+    });
+
+  it("drops separator-only text that costs tokens and says nothing", () => {
+    const { refs } = compactAxTree([
+      node("StaticText", "140 points", 1),
+      node("StaticText", " | ", 2),
+      node("StaticText", " (", 3),
+      node("StaticText", ")", 4),
+      node("StaticText", "93 comments", 5),
+    ]);
+    expect(refs.map((r) => r.name)).toEqual(["140 points", "93 comments"]);
+  });
+
+  it("drops a non-interactive node repeating a name already emitted", () => {
+    const { refs } = compactAxTree([
+      node("cell", "To Save C, We Must Save ABI", 1),
+      node("StaticText", "To Save C, We Must Save ABI", 2),
+    ]);
+    expect(refs).toHaveLength(1);
+    expect(refs[0].role).toBe("cell");
+  });
+
+  it("keeps interactive duplicates — two buttons named Submit are two things to click", () => {
+    const { refs } = compactAxTree([node("button", "Submit", 1), node("button", "Submit", 2)]);
+    expect(refs).toHaveLength(2);
+    expect(refMapIds(refs)).toEqual([1, 2]);
+  });
+
+  it("keeps repeated table cells — repetition is data, not noise", () => {
+    const { refs } = compactAxTree([node("cell", "N/A", 1), node("cell", "N/A", 2), node("cell", "N/A", 3)]);
+    expect(refs).toHaveLength(3);
+  });
+
+  it("still drops a duplicate link's text while keeping the link itself", () => {
+    const { refs } = compactAxTree([node("link", "Chicken Scheme 6.0", 1), node("StaticText", "Chicken Scheme 6.0", 2)]);
+    expect(refs.map((r) => r.role)).toEqual(["link"]);
+  });
+});
+
+const refMapIds = (refs: { ref: number }[]) => refs.map((r) => r.ref);

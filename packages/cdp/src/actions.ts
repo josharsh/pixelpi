@@ -1,5 +1,5 @@
 import type { ActOp, CdpSession, LookMode, Snapshot, SnapshotDelta, Store } from "./types";
-import { compactAxTree, renderRefs, type AXNode } from "./snapshot";
+import { compactAxTree, renderRefs, MAX_REFS, type AXNode } from "./snapshot";
 import type { EvalCtx } from "./evaltool";
 import { runEval } from "./evaltool";
 import { applySkills } from "./skills";
@@ -41,6 +41,8 @@ async function readUrlTitle(ctx: BrowserContext): Promise<{ url: string; title: 
 export interface LookOptions {
   mode?: LookMode;
   filter?: string;
+  /** Skip this many matching refs before rendering. Pages through pages with >MAX_REFS elements. */
+  offset?: number;
 }
 
 export async function look(ctx: BrowserContext, opts: LookOptions = {}): Promise<{ snapshot: Snapshot; text: string }> {
@@ -70,24 +72,39 @@ export async function look(ctx: BrowserContext, opts: LookOptions = {}): Promise
 
   // a11y (default)
   const tree = await ctx.session.send<{ nodes: AXNode[] }>("Accessibility.getFullAXTree", {});
-  const { refs, refMap, truncated } = compactAxTree(tree.nodes ?? []);
+  const { refs, refMap } = compactAxTree(tree.nodes ?? []);
 
+  // Every ref is addressable by act/fill, including ones this call doesn't render —
+  // an agent that filtered to find ref 640 can still click it.
   ctx.lastRefs.clear();
   for (const [k, v] of refMap) ctx.lastRefs.set(k, v);
 
   const snapshot: Snapshot = { url, title, refs, mode: "a11y" };
-  let filtered = refs;
+
+  // Filter runs over the whole page, then we window. The other order made anything
+  // past MAX_REFS unreachable by any filter.
+  let matched = refs;
   if (opts.filter) {
     const f = opts.filter.toLowerCase();
-    filtered = refs.filter((r) => r.role.toLowerCase().includes(f) || r.name.toLowerCase().includes(f));
+    matched = refs.filter((r) => r.role.toLowerCase().includes(f) || r.name.toLowerCase().includes(f));
   }
-  const header = `${title}\n${url}\n${filtered.length} of ${refs.length} refs${truncated ? " (TRUNCATED at 200)" : ""}`;
+
+  const offset = Math.max(0, Math.trunc(opts.offset ?? 0));
+  const shown = matched.slice(offset, offset + MAX_REFS);
+  const end = offset + shown.length;
+
+  let header = opts.filter ? `${matched.length} of ${refs.length} refs match "${opts.filter}"` : `${refs.length} refs`;
+  if (offset > 0 || end < matched.length) {
+    header += ` — showing ${shown.length ? offset + 1 : 0}-${end}`;
+    if (end < matched.length) header += `; look again with offset=${end} for the next ${MAX_REFS}`;
+  }
+
   let note = "";
   if (ctx.blockedNav) {
     note = `\n(navigation to ${ctx.blockedNav} was blocked: outside the allowed domains ${ctx.allowDomains.join(", ")})`;
     ctx.blockedNav = undefined;
   }
-  return { snapshot, text: `${header}${note}\n${renderRefs(filtered)}` };
+  return { snapshot, text: `${title}\n${url}\n${header}${note}\n${renderRefs(shown)}` };
 }
 
 function delta(snapshot: Snapshot, summary: string): SnapshotDelta {

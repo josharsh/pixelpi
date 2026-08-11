@@ -13,6 +13,9 @@ import { hostAllowed } from "./guardrails";
 import { runEval, type EvalCtx } from "./evaltool";
 import { applySkills, skillMatches, wrapSkill } from "./skills";
 
+/** Max characters of an eval return sent to the model in one call. Page past it with opts.offset. */
+const EVAL_MAX_CHARS = 8000;
+
 function str(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
@@ -78,18 +81,20 @@ export const createBrowserTools: CreateBrowserTools = (opts: BrowserToolsOptions
   const lookTool: Tool = {
     name: "look",
     description:
-      "Observe the page as a compact, ref-indexed accessibility tree. Returns addressable [ref] elements you pass to act/fill. mode: a11y (default), dom, or screenshot.",
+      "Observe the page as a compact, ref-indexed accessibility tree. Returns addressable [ref] elements you pass to act/fill. mode: a11y (default), dom, or screenshot. filter searches the whole page; offset pages through it when the header says there are more.",
     inputSchema: {
       type: "object",
       properties: {
         mode: { type: "string", enum: ["a11y", "dom", "screenshot"] },
-        filter: { type: "string", description: "Case-insensitive substring filter on role/name." },
+        filter: { type: "string", description: "Case-insensitive substring filter on role/name, applied across the whole page." },
+        offset: { type: "number", description: "Skip this many matching refs before rendering. Use the value the header suggests." },
       },
     },
     async execute(input) {
       const { snapshot, text } = await look(ctx, {
         mode: str(input.mode) as LookMode | undefined,
         filter: str(input.filter),
+        offset: typeof input.offset === "number" ? input.offset : undefined,
       });
       return { content: text, observation: snapshot };
     },
@@ -163,7 +168,7 @@ export const createBrowserTools: CreateBrowserTools = (opts: BrowserToolsOptions
   const evalTool: Tool = {
     name: "eval",
     description:
-      "The universal escape hatch. Run JS in the page. fn may be a function expression like () => {...} OR a bare statement body like `return document.title` (it can use args, await, and return). Pass data ONLY via the args array — never string-interpolate it into fn. Use eval for BULK DATA extraction (read text/attributes/JSON in one call), NOT for faking clicks/keystrokes: synthetic events are untrusted; use act/fill for real input. opts.world 'isolated' (default) or 'main'; opts.handle returns an object handle instead of a value; opts.host runs fn in Node with a CORS-free fetch for cross-origin requests.",
+      "The universal escape hatch. Run JS in the page. fn may be a function expression like () => {...} OR a bare statement body like `return document.title` (it can use args, await, and return). Pass data ONLY via the args array — never string-interpolate it into fn. Use eval for BULK DATA extraction (read text/attributes/JSON in one call), NOT for faking clicks/keystrokes: synthetic events are untrusted; use act/fill for real input. Returns are capped at 8000 chars; if the result says it was truncated, call again with opts.offset to read the next chunk. opts.world 'isolated' (default) or 'main'; opts.handle returns an object handle instead of a value; opts.host runs fn in Node with a CORS-free fetch for cross-origin requests.",
     inputSchema: {
       type: "object",
       properties: {
@@ -175,6 +180,7 @@ export const createBrowserTools: CreateBrowserTools = (opts: BrowserToolsOptions
             world: { type: "string", enum: ["main", "isolated"] },
             handle: { type: "boolean" },
             host: { type: "boolean" },
+            offset: { type: "number", description: "Start the returned text at this character index." },
           },
         },
       },
@@ -183,7 +189,8 @@ export const createBrowserTools: CreateBrowserTools = (opts: BrowserToolsOptions
     async execute(input) {
       const fn = str(input.fn) ?? "function(){}";
       const args = Array.isArray(input.args) ? (input.args as unknown[]) : [];
-      const o = (input.opts as { world?: "main" | "isolated"; handle?: boolean; host?: boolean }) ?? {};
+      const o =
+        (input.opts as { world?: "main" | "isolated"; handle?: boolean; host?: boolean; offset?: number }) ?? {};
       const res = await runEval(ctx.evalCtx, fn, args, o);
       if ("error" in res) return { content: res.error, isError: true, observation: res };
       if ("handle" in res) return { content: `handle:${res.handle}`, observation: res };
@@ -193,7 +200,17 @@ export const createBrowserTools: CreateBrowserTools = (opts: BrowserToolsOptions
       } catch {
         json = String(res.value);
       }
-      if (json.length > 8000) json = json.slice(0, 8000) + "…(truncated)";
+      // The description promises bulk extraction, so a cap has to come with a way past it.
+      const offset = Math.max(0, Math.trunc(o.offset ?? 0));
+      const total = json.length;
+      if (offset > 0 || total > EVAL_MAX_CHARS) {
+        const end = Math.min(offset + EVAL_MAX_CHARS, total);
+        const chunk = json.slice(offset, end);
+        json =
+          end < total
+            ? `${chunk}\n…(chars ${offset}-${end} of ${total}; call again with opts.offset=${end} for the rest)`
+            : `${chunk}\n…(chars ${offset}-${end} of ${total}; end of value)`;
+      }
       return { content: json, observation: res };
     },
   };
