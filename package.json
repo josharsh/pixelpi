@@ -23,6 +23,7 @@
     "@josharsh/pixelpi-cdp": "workspace:*",
     "@josharsh/pixelpi-core": "workspace:*",
     "@types/node": "^22.19.21",
+    "js-tiktoken": "^1.0.21",
     "pixelpi": "workspace:*",
     "publint": "^0.3.21",
     "tsup": "^8.5.1",

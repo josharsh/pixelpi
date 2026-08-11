@@ -10,6 +10,9 @@ run-out.jsonl
 coverage/
 *.tsbuildinfo
 
+# Snapshot dumps written by @playwright/mcp during `pnpm bench:tokens`
+.playwright-mcp/
+
 # Local agent/editor state — not part of the public project
 .claude/
 
