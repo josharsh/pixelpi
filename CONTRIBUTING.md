@@ -60,3 +60,4 @@ Versioning and publishing to npm are handled manually by the maintainer — you 
 - 2-space indentation, ESM TypeScript throughout.
 - Co-locate tests with source (`foo.ts` + `foo.test.ts`). Test the logic that can break; skip glue.
 - No TODOs in merged code. Finish it or leave it out.
+- The repo ships an [`.editorconfig`](.editorconfig) — enable EditorConfig support in your editor and the basics (LF, UTF-8, 2-space indent) come for free.
