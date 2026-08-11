@@ -4,7 +4,7 @@
 
 **A browser that fits in your agent's context budget.**
 
-*Six tools and 1,196 tokens of definitions — against Playwright MCP's 24 and 5,953, paid on every single call.*
+*Six tools, 1,196 tokens of definitions. Playwright MCP charges 24 and 5,953 — on every call.*
 
 [![npm version](https://img.shields.io/npm/v/pixelpi.svg)](https://www.npmjs.com/package/pixelpi)
 [![npm downloads](https://img.shields.io/npm/dm/pixelpi.svg)](https://www.npmjs.com/package/pixelpi)
@@ -19,20 +19,22 @@ npm i -g pixelpi
 
 </div>
 
-Giving an agent a browser usually costs more context than the work it was hired to do. Playwright MCP spends 5,953 tokens on tool definitions before the agent has seen anything, then 7,000–13,000 more per page. pixelpi does the same job on a budget: **6 tools, 1,196 tokens of definitions, and 2,100–4,900 tokens for a whole page** — measured, on real sites, with a script you can run without an API key.
+Hand an agent a browser and the tool usually costs more context than the job does. Playwright MCP puts 24 tool definitions in front of the model — 5,953 tokens — before it has looked at a single page, then another 7,000 to 13,000 for the page itself. That's rent on a toolbox the agent mostly never opens.
 
-It's a browser tool for agents that have other work to do.
+pixelpi does the same work on a budget: **six tools, 1,196 tokens of definitions, and 2,100–4,900 tokens for an entire page**. Every number on this page came out of a script in [`bench/`](bench/) that you can run yourself, without an API key, and which will cheerfully tell you if I'm wrong.
+
+It's a browser for agents that have other things to do with their context window.
 
 ## What you get
 
-- **5.0× less fixed context**: 6 tools at 1,196 tokens vs Playwright MCP's 24 at 5,953 — paid on *every* call, not once.
-- **3.3× less per page**, averaged over six real sites, counting the full page and every element addressable. [See the numbers →](bench/)
-- **Six primitives, not a toolbox**: `look · act · fill · nav · eval · store`. The agent composes the rest as runtime skills, and only a one-line description per skill enters the prompt.
-- **Guardrailed at the tool layer**, not the prompt: a domain fence, a dry-run/confirm gate before anything irreversible, token budgets, and a fail-closed `BLOCKED` outcome.
-- **Record and replay**: once a task works, save it as a trace and rerun it with no model in the loop — over a CSV, in parallel, self-healing when the page drifts.
-- **Callable from code, readable by other agents**: typed SDK plus a clean `--json` contract.
+- **Six primitives instead of a toolbox.** `look · act · fill · nav · eval · store`. Anything more specific, the agent writes for itself at runtime as a skill — and only that skill's one-line description ever reaches the prompt.
+- **5.0× less fixed context.** 1,196 tokens of tool definitions against Playwright MCP's 5,953. This is the one that compounds: you pay it on *every* call, not once at startup.
+- **3.3× less per page**, across six real sites, counting the whole page with every element still addressable. [The numbers, and what they don't prove →](bench/)
+- **Guardrails in the harness, not the prompt.** A domain fence, a dry-run/confirm gate in front of anything irreversible, token budgets, and a fail-closed `BLOCKED` outcome. A system prompt is a suggestion; a tool that refuses is a guarantee.
+- **Record once, replay for free.** When a task finally works, save it as a trace and run it again with no model in the loop — across a CSV, in parallel, healing itself when the page shifts under you.
+- **Meant to be driven by other software.** Typed SDK, and a `--json` contract clean enough for another agent to parse without heroics.
 
-> Context is the scarce resource in an agent loop. Every token a browser tool spends describing itself is a token your agent doesn't have for the task.
+> Context is the scarce resource in an agent loop. Every token your browser tool spends describing itself is a token the agent doesn't get for the actual work.
 
 ## Quickstart
 
@@ -44,11 +46,11 @@ pixelpi "search Hacker News for rust" --record hn   # record it, then name the i
 pixelpi run hn --over queries.csv --concurrency 8   # run it across a dataset, in parallel
 ```
 
-No key is needed to reproduce the token numbers or to replay a recorded trace. A key is only for the live model loop, and pixelpi works with any provider.
+You only need a key for the live model loop. Reproducing the token numbers and replaying a saved trace both work without one, and any provider will do.
 
 ## The context budget, measured
 
-Against [Playwright MCP](https://playwright.dev/mcp/introduction) — the tool people actually compare this to. Both return an accessibility tree with stable refs, so this is a like-for-like comparison of what lands in the model's context. Reproducible with `pnpm bench:tokens`, no API key:
+Measured against [Playwright MCP](https://playwright.dev/mcp/introduction), because that's what people actually weigh this against. Both hand the model an accessibility tree with stable refs, so it's a fair fight over the same thing: what ends up in the context window. Run it yourself with `pnpm bench:tokens`.
 
 **Fixed cost — tool definitions, serialized into the prompt on every call:**
 
@@ -57,7 +59,7 @@ Against [Playwright MCP](https://playwright.dev/mcp/introduction) — the tool p
 | **pixelpi** | 6 | **1,196** |
 | Playwright MCP | 24 | 5,953 |
 
-**Per-page cost — the whole page, every element addressable:**
+**Per-page cost — the whole page, every element still addressable:**
 
 | Site | pixelpi | Playwright MCP | ratio |
 |---|---:|---:|---:|
@@ -68,7 +70,9 @@ Against [Playwright MCP](https://playwright.dev/mcp/introduction) — the tool p
 | HuggingFace | 2,767 | 9,328 | **3.37×** |
 | Apple | 2,144 | 9,597 | **4.48×** |
 
-Mean **3.33×**, measured 2026-08-11 with `o200k_base` against `@playwright/mcp@0.0.79`. The pixelpi column charges for the *entire* page including paging — a single `look()` renders the first 200 refs, which is what most steps actually need, and on Hacker News that's 2,652 tokens against 12,452. [Full method, and what we don't claim →](bench/)
+Mean **3.33×**, measured 2026-08-11 with `o200k_base` against `@playwright/mcp@0.0.79`.
+
+That pixelpi column is deliberately unflattering: it charges for the *entire* page, paging included. In practice one `look()` renders the first 200 refs and that's all most steps ever need — on Hacker News that's 2,652 tokens against 12,452. I report the worse number because it's the honest one. [Full method →](bench/)
 
 ## Why it's different
 
@@ -83,15 +87,15 @@ Mean **3.33×**, measured 2026-08-11 with `o200k_base` against `@playwright/mcp@
 | Replay | record once, replay with **0 tokens** | no | no |
 | Parallel fan-out | record once, run a dataset for ~0 tokens/row | no | no |
 
-pixelpi's advantage here is context, not capability — Playwright MCP's 24 tools do things these 6 don't. The bet is that an agent with a browser plus five other MCP servers runs out of context before it runs out of features.
+To be clear about what this table is and isn't: the advantage is context, not capability. Playwright MCP's 24 tools genuinely do things these six don't. The bet is simply that an agent carrying a browser plus five other MCP servers runs out of context long before it runs out of features.
 
 ## Use it for
 
-Giving your own agent a browser tool that doesn't eat its context window — especially one already loaded with other MCP servers. Then, once a task works: bulk form submissions, scraping at scale, price/stock/account checks across a list, and nightly portal exports, all replayed from a recorded trace with no model in the loop.
+Giving your own agent a browser that doesn't eat its context window — especially an agent already weighed down by other MCP servers. Then, once a task works: bulk form submissions, scraping at scale, price and stock and account checks across a list, nightly portal exports. All of it replayed from a trace, with no model in the loop.
 
 ## Record, replay, and run over data
 
-Save a solved run as a trace, then replay it with no model in the loop. The first run is the compile step; every replay is the binary: free, deterministic, and fast.
+Solve it once with the model, save the trace, then never pay for that thinking again. The first run is the compiler. Every run after it is the binary.
 
 ```bash
 pixelpi "find the top story on Hacker News" --record hn-top   # solve once, save a trace
@@ -99,9 +103,9 @@ pixelpi replay hn-top                                         # rerun it, no mod
 pixelpi replay hn-top --heal                                  # repair one step if the page drifted
 ```
 
-Traces key on the accessibility role and name of each element, not CSS selectors or coordinates, so they survive most layout changes. A bare name lives in `~/.pixelpi/traces/`; pass a path (or a name ending in `.json`) to keep a trace inside a repo. Strict `replay` needs no API key and exits `3` on drift, naming the step that no longer matches. `--heal` re-derives just that step with the model and rewrites the trace, so it self-corrects over time. Replay reproduces actions, not intent: it shines for stable, repeated flows.
+Traces key on each element's accessibility role and name, never CSS selectors or coordinates, which is why they survive most redesigns. A bare name lands in `~/.pixelpi/traces/`; pass a path (or a name ending in `.json`) to keep the trace in a repo next to the code that uses it. Strict `replay` needs no API key and exits `3` on drift, naming the step that stopped matching. `--heal` re-derives just that one step and rewrites the trace, so it corrects itself over time. Worth being clear-eyed here: replay reproduces actions, not intent. It shines on stable, repeated flows and nowhere else.
 
-A parametrized trace is a function. Record it once with an example input, then run it across a list:
+A parametrized trace is a function. Record it once with an example input, then map it over a list:
 
 ```bash
 pixelpi "search Hacker News for rust" --record hn   # then name "rust" as the input q
@@ -110,35 +114,35 @@ pixelpi run hn --over queries.csv --concurrency 8      # map over a CSV/JSONL, i
 pixelpi run hn --over queries.csv --heal               # repair the trace if the site changes mid-run
 ```
 
-Each row runs in its own headless Chrome, bounded by `--concurrency` (default 4). Outcomes stream to a JSONL file (`--out`), and `--resume` skips rows already done.
+Every row gets its own headless Chrome, bounded by `--concurrency` (default 4). Outcomes stream to a JSONL file via `--out`, and `--resume` picks up where a killed run left off.
 
-Sites change mid-batch. Under `--heal`, the first row runs alone as a warm-up, and if a later row drifts — an A/B test renames a button, a banner appears at row 900 — one worker repairs the shared trace with the model and every other row reuses that fix, including the ones that already drifted waiting for it. `--max-heals` (default 3) caps the repairs: past it, drifted rows are reported rather than repaired, so a genuinely broken site can't cost one model run per row. A 5,000-row job costs one model run plus, at most, a handful of repairs.
+Sites change halfway through a batch — that's just life. Under `--heal` the first row runs alone as a warm-up, and when a later row drifts (an A/B test renames a button, a cookie banner shows up at row 900) one worker repairs the shared trace and every other row reuses the fix, including the rows that already drifted while waiting. `--max-heals` (default 3) caps it: past that, drifted rows get reported instead of repaired, because a site that keeps changing is broken and shouldn't cost you one model run per row. A 5,000-row job comes out to one model run plus a handful of repairs.
 
 ## Describe a trace (for humans and agents)
 
-Every trace is an introspectable function. `describe` shows its inputs and output:
+Every trace is an introspectable function. `describe` shows what goes in and what comes out:
 
 ```bash
 pixelpi describe hn            # human card: task, inputs, output, usage
 pixelpi describe hn --json     # {"type":"description","params":[...],"output":{...}}
 ```
 
-Under `--json`, every command emits one NDJSON stream (progress, results, and errors as `{"type":"error","code":...}`), so an AI agent can drive pixelpi and parse a single clean contract.
+Under `--json` every command emits a single NDJSON stream — progress, results, and errors as `{"type":"error","code":...}` — so an agent driving pixelpi has exactly one contract to parse.
 
 ## Sessions and login
 
-Every run uses a fresh, disposable Chrome profile by default. To stay logged in across runs, use a persistent profile:
+Runs get a fresh, disposable Chrome profile by default. When you need to stay logged in, use a persistent one:
 
 ```bash
 pixelpi login https://github.com                    # sign in once, press Enter to save
 pixelpi --profile "check my GitHub notifications"   # reuse the saved session, headless
 ```
 
-`--profile` uses `~/.pixelpi/profile`; `--profile=<dir>` uses a custom one. pixelpi finds Chrome automatically on macOS, Linux, and Windows; set `PIXELPI_CHROME=/path/to/chrome` to override.
+`--profile` uses `~/.pixelpi/profile`, or `--profile=<dir>` for somewhere else. pixelpi finds Chrome on its own across macOS, Linux, and Windows; set `PIXELPI_CHROME=/path/to/chrome` if it guesses wrong.
 
 ## Guardrails
 
-An agent that fills forms and clicks Submit needs harder limits than a system prompt. Every guardrail below is **deterministic — enforced at the tool layer**, not left to the model's judgment:
+An agent that fills in forms and clicks Submit needs harder limits than a paragraph of English. Everything below is **deterministic and enforced at the tool layer**, where the model's judgment isn't a factor:
 
 ```bash
 pixelpi --allow-domains sessionize.com "submit my talk at https://sessionize.com/..."  # can't wander off
@@ -147,11 +151,11 @@ pixelpi --confirm "send the contact form on example.com"                        
 pixelpi --max-tokens 500000 "compare prices across 40 product pages"                   # hard token budget
 ```
 
-- **`--allow-domains a.com,b.com`** — a navigation fence. `goto`/`newtab` off the list are refused, and off-fence link clicks or JS redirects bounce back to a blank page. The agent can't reach a search engine to "find an alternative".
-- **`--dry-run`** — navigate, read, and fill normally, but a consequential click (submit, send, pay, publish, …) is withheld; the run reports exactly what *would* have been committed, and commits nothing.
-- **`--confirm`** — same detection, but pauses for an explicit y/N. With no TTY (or under `--json`) the action is denied and a `{"type":"pending_action",…}` event is emitted, so a calling agent can decide and re-run.
-- **`--max-tokens <n>`** — a total input+output budget that warns at 80% and stops cleanly, mirroring `--max-steps`. Context is also bounded by default — stale page snapshots are elided from the conversation, so cost grows linearly with steps, not quadratically.
-- **Fail closed, first class.** If the target is unreachable, closed, or required form data was never provided, the agent stops with `BLOCKED: <reason>` (exit code 4) instead of substituting a different goal or inventing field values.
+- **`--allow-domains a.com,b.com`** — a navigation fence. `goto`/`newtab` off the list get refused, and off-fence link clicks or JS redirects bounce back to a blank page. The agent can't slip out to a search engine to "find an alternative".
+- **`--dry-run`** — navigate, read, and fill as normal, but withhold the consequential click (submit, send, pay, publish, …). You get a report of exactly what *would* have been committed, and nothing is.
+- **`--confirm`** — same detection, but it stops and asks y/N. With no TTY, or under `--json`, the action is denied and a `{"type":"pending_action",…}` event goes out so the calling agent can decide and re-run.
+- **`--max-tokens <n>`** — a hard input+output budget that warns at 80% and then stops cleanly, mirroring `--max-steps`. Context is bounded by default too: stale page snapshots get elided from the conversation, so cost grows linearly with steps instead of quadratically.
+- **Fail closed, and say so.** If the target is unreachable, the form data was never provided, or the door is simply shut, the agent stops with `BLOCKED: <reason>` and exit code 4 rather than quietly substituting a different goal or inventing values for fields.
 
 ## The six primitives
 
@@ -159,18 +163,18 @@ pixelpi --max-tokens 500000 "compare prices across 40 product pages"            
 look · act · fill · nav · eval · store
 ```
 
-- **`look(mode?, filter?, offset?)`**: compact, ref-indexed accessibility snapshot. The `read`. Renders 200 refs at a time; `filter` searches the whole page and `offset` pages through it, so nothing on a large page is unreachable.
-- **`act(ref, op, value?)`**: mutate the page by stable ref via trusted CDP input events. The `write`.
-- **`fill(fields[])`**: batched form fill in one call.
-- **`nav(action, arg?)`**: navigate, tabs, `waitfor`.
-- **`eval(fn, args?, opts?)`**: arbitrary JS in the page realm. The escape hatch, the `bash` of the browser.
-- **`store(action, key?, value?)`**: durable host-side JSON KV. The filesystem.
+- **`look(mode?, filter?, offset?)`** — a compact, ref-indexed accessibility snapshot. The `read`. Renders 200 refs at a time; `filter` searches the whole page and `offset` walks through it, so nothing on a big page is out of reach.
+- **`act(ref, op, value?)`** — mutate the page by stable ref, through trusted CDP input events. The `write`.
+- **`fill(fields[])`** — a whole form in one call.
+- **`nav(action, arg?)`** — navigation, tabs, `waitfor`.
+- **`eval(fn, args?, opts?)`** — arbitrary JS in the page realm. The escape hatch; the `bash` of the browser.
+- **`store(action, key?, value?)`** — durable host-side JSON KV. The filesystem.
 
-Elements are addressed by **stable ref**, not CSS or coordinates: cheap, deterministic, resilient to layout churn. Everything else composes from `eval`; the agent writes its own higher-level tools as JSON skills at runtime, and only each skill's one-line description enters the prompt.
+Elements are addressed by **stable ref** rather than CSS or coordinates: cheap, deterministic, and largely indifferent to layout churn. Everything else composes out of `eval` — the agent builds its own higher-level tools as JSON skills while it works, and the prompt only ever sees the one-line description of each.
 
 ## Use it from code
 
-Load a saved trace as a callable function, no model or API key required:
+Load a saved trace as a callable function. No model, no API key:
 
 ```ts
 import { loadTrace } from "pixelpi";
@@ -181,19 +185,27 @@ const r  = await hn({ query: "rust" });              // run once  -> { ok, outpu
 const rs = await hn.over(rows, { concurrency: 4 });  // map over a dataset, results in input order
 ```
 
-Or drive the full agent loop, or the six primitives against raw CDP with no model. More in [`examples/`](https://github.com/josharsh/pixelpi/tree/main/examples).
+You can also drive the full agent loop, or take the six primitives straight to raw CDP with no model at all. See [`examples/`](https://github.com/josharsh/pixelpi/tree/main/examples).
 
 ## Philosophy
 
-The model is the harness now, so you expose the substrate's irreducible primitives and let the agent compose the rest. Every tool you add is rent the agent pays on every call, forever — so the right number of tools is the smallest set that spans the space, and everything else becomes a runtime skill the agent writes for itself. This is the bet pi made for the terminal, applied to the browser. See [docs/how-it-works.md](https://github.com/josharsh/pixelpi/blob/main/docs/how-it-works.md) for the moving parts: why six tools, and why raw CDP instead of Playwright.
+The model is the harness now. So you expose the substrate's irreducible primitives and let the agent compose everything else on top.
+
+Every tool you add is rent, paid on every call, forever. That reframes the design question: not "what would be useful to have?" but "what is the smallest set that spans the space?" Six, it turns out, with `eval` as the escape hatch — and anything more specific becomes a skill the agent writes for itself when it needs one. This is the bet pi made for the terminal, pointed at the browser instead.
+
+[docs/how-it-works.md](https://github.com/josharsh/pixelpi/blob/main/docs/how-it-works.md) has the moving parts: why six tools, and why raw CDP rather than Playwright.
 
 ## Status
 
-Substrate (`look`/`eval`) is validated live against real sites. The agent loop, guards, stores, replay, run, and provider adapters are unit-tested (253 tests, mock provider, no network in tests). The full model-to-browser loop runs once you supply an API key. Requires Node >= 20 and Google Chrome (macOS, Linux, or Windows). Pre-1.0 and moving fast.
+The substrate (`look`/`eval`) is exercised live against real sites. The agent loop, guards, stores, replay, run, and provider adapters are unit-tested — 253 tests, mock provider, no network. The full model-to-browser loop needs an API key.
+
+Needs Node >= 20 and Google Chrome, which remains the one dependency you can't `npm install`. macOS, Linux, and Windows.
+
+Pre-1.0. Things move.
 
 ## Contributing
 
-Issues and PRs welcome. Run `pnpm install && pnpm build && pnpm test` before opening a PR. See [CONTRIBUTING.md](https://github.com/josharsh/pixelpi/blob/main/CONTRIBUTING.md).
+Issues and PRs welcome. Run `pnpm install && pnpm build && pnpm test` before you open one. See [CONTRIBUTING.md](https://github.com/josharsh/pixelpi/blob/main/CONTRIBUTING.md).
 
 ## License
 
