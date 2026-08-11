@@ -2,9 +2,9 @@
 
 # pixelpi
 
-**A browser your AI can afford.**
+**A browser that fits in your agent's context budget.**
 
-*Record a task once. Run it on a thousand rows for the cost of one.*
+*Six tools and 1,196 tokens of definitions — against Playwright MCP's 24 and 5,953, paid on every single call.*
 
 [![npm version](https://img.shields.io/npm/v/pixelpi.svg)](https://www.npmjs.com/package/pixelpi)
 [![npm downloads](https://img.shields.io/npm/dm/pixelpi.svg)](https://www.npmjs.com/package/pixelpi)
@@ -19,18 +19,20 @@ npm i -g pixelpi
 
 </div>
 
-pixelpi lets any AI model use a real web browser, and it reads each page in about 2,000 tokens instead of 180,000. Then it goes further: once a task works, you record it, and pixelpi repeats those exact steps with no model in the loop, across a whole dataset, in parallel, self-healing when a page changes. It is pi, the minimal coding agent, applied to the browser: six tools, raw Chrome DevTools Protocol, any model, your key.
+Giving an agent a browser usually costs more context than the work it was hired to do. Playwright MCP spends 5,953 tokens on tool definitions before the agent has seen anything, then 7,000–13,000 more per page. pixelpi does the same job on a budget: **6 tools, 1,196 tokens of definitions, and 2,100–4,900 tokens for a whole page** — measured, on real sites, with a script you can run without an API key.
+
+It's a browser tool for agents that have other work to do.
 
 ## What you get
 
-- Read any page in **~2,000 tokens**, 37x to 100x fewer than raw DOM.
-- **Record** a solved task once; **replay** it with no model, deterministically, for free.
-- **Run** a recorded task across a CSV or JSONL **in parallel**, about 0 tokens per row.
-- **Self-heals mid-batch**: when a page changes at row 900, the model fixes one step once and every remaining row reuses it.
-- **Callable from code, readable by other AI agents** (typed SDK plus a clean `--json` contract).
-- **Guardrailed**: a domain fence, a dry-run/confirm gate before anything irreversible, token budgets, and a fail-closed `BLOCKED` outcome — enforced in the harness, not the prompt.
+- **5.0× less fixed context**: 6 tools at 1,196 tokens vs Playwright MCP's 24 at 5,953 — paid on *every* call, not once.
+- **3.3× less per page**, averaged over six real sites, counting the full page and every element addressable. [See the numbers →](bench/)
+- **Six primitives, not a toolbox**: `look · act · fill · nav · eval · store`. The agent composes the rest as runtime skills, and only a one-line description per skill enters the prompt.
+- **Guardrailed at the tool layer**, not the prompt: a domain fence, a dry-run/confirm gate before anything irreversible, token budgets, and a fail-closed `BLOCKED` outcome.
+- **Record and replay**: once a task works, save it as a trace and rerun it with no model in the loop — over a CSV, in parallel, self-healing when the page drifts.
+- **Callable from code, readable by other agents**: typed SDK plus a clean `--json` contract.
 
-> A normal browser agent does 5,000 inputs as 5,000 full loops. pixelpi does one recorded run plus 4,999 free replays. The model thinks once; the rest is nearly free.
+> Context is the scarce resource in an agent loop. Every token a browser tool spends describing itself is a token your agent doesn't have for the task.
 
 ## Quickstart
 
@@ -44,35 +46,48 @@ pixelpi run hn --over queries.csv --concurrency 8   # run it across a dataset, i
 
 No key is needed to reproduce the token numbers or to replay a recorded trace. A key is only for the live model loop, and pixelpi works with any provider.
 
-## The token win, measured
+## The context budget, measured
 
-`look()` versus a raw-DOM dump, across the sites [WebVoyager](https://github.com/MinorJerry/WebVoyager) tests on. Full table and a reproducible script (no key needed) are in [`bench/`](https://github.com/josharsh/pixelpi/tree/main/bench):
+Against [Playwright MCP](https://playwright.dev/mcp/introduction) — the tool people actually compare this to. Both return an accessibility tree with stable refs, so this is a like-for-like comparison of what lands in the model's context. Reproducible with `pnpm bench:tokens`, no API key:
 
-| Site | `look()` | raw DOM | factor |
-|---|---|---|---|
-| Coursera | 1,997 tok | 202,892 tok | **101.6×** |
-| GitHub | 1,955 tok | 146,787 tok | **75.1×** |
-| Apple | 2,254 tok | 96,507 tok | **42.8×** |
-| Hugging Face | 1,932 tok | 45,300 tok | **23.4×** |
-| ArXiv | 1,588 tok | 10,652 tok | **6.7×** |
+**Fixed cost — tool definitions, serialized into the prompt on every call:**
 
-`look()` holds around 2k tokens whatever the page weighs, while the raw DOM keeps growing. The heavier the site, the bigger the win.
+| harness | tools | tokens |
+|---|---:|---:|
+| **pixelpi** | 6 | **1,196** |
+| Playwright MCP | 24 | 5,953 |
+
+**Per-page cost — the whole page, every element addressable:**
+
+| Site | pixelpi | Playwright MCP | ratio |
+|---|---:|---:|---:|
+| HackerNews | 3,972 | 12,452 | **3.13×** |
+| ArXiv | 4,887 | 13,275 | **2.72×** |
+| GitHub | 2,512 | 7,344 | **2.92×** |
+| Coursera | 3,195 | 10,702 | **3.35×** |
+| HuggingFace | 2,767 | 9,328 | **3.37×** |
+| Apple | 2,144 | 9,597 | **4.48×** |
+
+Mean **3.33×**, measured 2026-08-11 with `o200k_base` against `@playwright/mcp@0.0.79`. The pixelpi column charges for the *entire* page including paging — a single `look()` renders the first 200 refs, which is what most steps actually need, and on Hacker News that's 2,652 tokens against 12,452. [Full method, and what we don't claim →](bench/)
 
 ## Why it's different
 
 | | pixelpi | Playwright MCP | Chrome DevTools MCP |
 |---|---|---|---|
-| Tools in context | **6** | 21 | 31 |
-| Tool-def + prompt tokens | **~1,055** | ~13,700 | ~18,000 |
-| Page representation | a11y tree (bounded) | mixed | mixed |
+| Tools in context | **6** | 24 | 31 |
+| Tool-definition tokens | **1,196** | 5,953 | not measured |
+| Page representation | a11y tree, flat refs | a11y tree, nested YAML | mixed |
+| Whole-page cost (HN) | **3,972** | 12,452 | not measured |
 | Substrate | **raw CDP** (no Playwright) | Playwright | CDP |
 | Self-extension | agent writes JS skills at runtime | no | no |
 | Replay | record once, replay with **0 tokens** | no | no |
 | Parallel fan-out | record once, run a dataset for ~0 tokens/row | no | no |
 
+pixelpi's advantage here is context, not capability — Playwright MCP's 24 tools do things these 6 don't. The bet is that an agent with a browser plus five other MCP servers runs out of context before it runs out of features.
+
 ## Use it for
 
-Bulk form submissions, scraping at scale, price, stock, or account checks across a list, nightly portal exports, or giving your own AI agent a browser tool it can afford and call.
+Giving your own agent a browser tool that doesn't eat its context window — especially one already loaded with other MCP servers. Then, once a task works: bulk form submissions, scraping at scale, price/stock/account checks across a list, and nightly portal exports, all replayed from a recorded trace with no model in the loop.
 
 ## Record, replay, and run over data
 
@@ -144,7 +159,7 @@ pixelpi --max-tokens 500000 "compare prices across 40 product pages"            
 look · act · fill · nav · eval · store
 ```
 
-- **`look(mode?, filter?)`**: compact, ref-indexed accessibility snapshot. The `read`.
+- **`look(mode?, filter?, offset?)`**: compact, ref-indexed accessibility snapshot. The `read`. Renders 200 refs at a time; `filter` searches the whole page and `offset` pages through it, so nothing on a large page is unreachable.
 - **`act(ref, op, value?)`**: mutate the page by stable ref via trusted CDP input events. The `write`.
 - **`fill(fields[])`**: batched form fill in one call.
 - **`nav(action, arg?)`**: navigate, tabs, `waitfor`.
@@ -170,11 +185,11 @@ Or drive the full agent loop, or the six primitives against raw CDP with no mode
 
 ## Philosophy
 
-The model is the harness now, so you expose the substrate's irreducible primitives and let the agent compose the rest. This is the bet pi made for the terminal, applied to the browser. See [docs/how-it-works.md](https://github.com/josharsh/pixelpi/blob/main/docs/how-it-works.md) for the moving parts (why six tools, why raw CDP, why no MCP).
+The model is the harness now, so you expose the substrate's irreducible primitives and let the agent compose the rest. Every tool you add is rent the agent pays on every call, forever — so the right number of tools is the smallest set that spans the space, and everything else becomes a runtime skill the agent writes for itself. This is the bet pi made for the terminal, applied to the browser. See [docs/how-it-works.md](https://github.com/josharsh/pixelpi/blob/main/docs/how-it-works.md) for the moving parts: why six tools, and why raw CDP instead of Playwright.
 
 ## Status
 
-Substrate (`look`/`eval`) is validated live against real sites. The agent loop, guards, stores, replay, run, and provider adapters are unit-tested (239 tests, mock provider, no network in tests). The full model-to-browser loop runs once you supply an API key. Requires Node >= 20 and Google Chrome (macOS, Linux, or Windows). Pre-1.0 and moving fast.
+Substrate (`look`/`eval`) is validated live against real sites. The agent loop, guards, stores, replay, run, and provider adapters are unit-tested (253 tests, mock provider, no network in tests). The full model-to-browser loop runs once you supply an API key. Requires Node >= 20 and Google Chrome (macOS, Linux, or Windows). Pre-1.0 and moving fast.
 
 ## Contributing
 

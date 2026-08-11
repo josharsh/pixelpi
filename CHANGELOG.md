@@ -11,6 +11,39 @@ packages version independently and are only listed when they changed.
 
 ## [Unreleased]
 
+### Added
+
+- **`look` takes an `offset`.** A single call still renders 200 refs, but the header now reports the
+  total and tells the agent how to page: `353 refs — showing 1-200; look again with offset=200`.
+- **`eval` takes an `opts.offset`.** Returns are still capped at 8000 characters per call, but the
+  truncation marker now reports the total and the offset to resume from, so bulk extraction can
+  actually finish. The tool description promised bulk extraction; the implementation now delivers it.
+
+### Fixed
+
+- **`look`'s `filter` searched only the first 200 refs.** Compaction hard-capped at `MAX_REFS` and
+  the filter ran over the already-truncated list, so an element at position 201 or beyond was
+  unreachable by any query. Compaction is now uncapped and the window is applied at render time, so
+  `filter` searches the whole page and every ref stays addressable by `act`/`fill`.
+- **`look` emitted the same content twice.** The accessibility tree describes a Hacker News row both
+  as an aggregating table cell and again as the decomposed links and text inside it. Non-interactive
+  nodes repeating an already-emitted name are now dropped. Interactive nodes and table cells are
+  exempt — two buttons named "Submit" are two things to click, and repeated cell values are data.
+- **`look` spent tokens on punctuation.** Separator-only nodes (`" | "`, `" ("`, `")"`) were 22% of
+  the lines on Hacker News. Non-interactive nodes whose name has no letter or digit are now dropped.
+
+Together these cut Hacker News from 811 nodes to 351 and the full-page cost from roughly 10,000
+tokens to 3,972 — while making the whole page reachable for the first time.
+
+### Changed
+
+- **`bench/efficiency.ts` measures against Playwright MCP, not a raw-DOM dump**, and counts tokens
+  with `o200k_base` instead of a `chars/4` estimate that understated real counts by ~25%. The old
+  "37× to 100× fewer tokens than raw DOM" comparison was against a baseline nobody ships to a model;
+  the honest figures against `@playwright/mcp` are 5.0× on tool definitions and 3.33× per page.
+- **README repositioned around the context budget** — the fixed cost of tool definitions, paid on
+  every call, rather than a headline page-compression ratio.
+
 ## [0.4.0] — 2026-07-30
 
 ### Added
