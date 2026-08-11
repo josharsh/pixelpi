@@ -23,7 +23,7 @@ Hand an agent a browser and the tool usually costs more context than the job doe
 
 pixelpi does the same work on a budget: **six tools, 1,196 tokens of definitions, and 2,100–4,900 tokens for an entire page**. Every number on this page came out of a script in [`bench/`](bench/) that you can run yourself, without an API key, and which will cheerfully tell you if I'm wrong.
 
-It's a browser for agents that have other things to do with their context window.
+It's a browser for agents that have other things to do with their context window. Drop it into Claude Code or Cursor as an MCP server, or drive it from the CLI.
 
 ## What you get
 
@@ -32,6 +32,7 @@ It's a browser for agents that have other things to do with their context window
 - **3.3× less per page**, across six real sites, counting the whole page with every element still addressable. [The numbers, and what they don't prove →](bench/)
 - **Guardrails in the harness, not the prompt.** A domain fence, a dry-run/confirm gate in front of anything irreversible, token budgets, and a fail-closed `BLOCKED` outcome. A system prompt is a suggestion; a tool that refuses is a guarantee.
 - **Record once, replay for free.** When a task finally works, save it as a trace and run it again with no model in the loop — across a CSV, in parallel, healing itself when the page shifts under you.
+- **An MCP server in one line of config.** `npx -y pixelpi mcp`, and your existing Claude Code or Cursor subscription drives it. No key to set up.
 - **Meant to be driven by other software.** Typed SDK, and a `--json` contract clean enough for another agent to parse without heroics.
 
 > Context is the scarce resource in an agent loop. Every token your browser tool spends describing itself is a token the agent doesn't get for the actual work.
@@ -47,6 +48,37 @@ pixelpi run hn --over queries.csv --concurrency 8   # run it across a dataset, i
 ```
 
 You only need a key for the live model loop. Reproducing the token numbers and replaying a saved trace both work without one, and any provider will do.
+
+## Use it as an MCP server
+
+One line of config, and your agent's browser costs 1,196 tokens of definitions instead of 5,953. No API key — it runs on whatever model your client already pays for.
+
+```json
+{
+  "mcpServers": {
+    "pixelpi": { "command": "npx", "args": ["-y", "pixelpi", "mcp"] }
+  }
+}
+```
+
+That's `~/.claude.json` for Claude Code, or Cursor's `mcp.json`. Chrome starts on the first tool call, not at startup, so an idle server costs you nothing but a few MB of Node.
+
+The guardrails and the profile come along:
+
+```json
+{
+  "mcpServers": {
+    "pixelpi": {
+      "command": "npx",
+      "args": ["-y", "pixelpi", "mcp", "--allow-domains", "github.com", "--dry-run", "--profile"]
+    }
+  }
+}
+```
+
+`--profile` reuses the session you saved with `pixelpi login`, so the agent starts already signed in. `--allow-domains` fences it. `--dry-run` lets it fill anything and submit nothing. With `--confirm` there's no TTY to ask at, so consequential actions are refused and the reason is handed back to the model, which can decide and retry.
+
+Want to check the 5× before you install it? `pnpm bench:tokens` prints both sides.
 
 ## The context budget, measured
 
@@ -82,6 +114,7 @@ That pixelpi column is deliberately unflattering: it charges for the *entire* pa
 | Tool-definition tokens | **1,196** | 5,953 | not measured |
 | Page representation | a11y tree, flat refs | a11y tree, nested YAML | mixed |
 | Whole-page cost (HN) | **3,972** | 12,452 | not measured |
+| Ships as an MCP server | yes | yes | yes |
 | Substrate | **raw CDP** (no Playwright) | Playwright | CDP |
 | Self-extension | agent writes JS skills at runtime | no | no |
 | Replay | record once, replay with **0 tokens** | no | no |
@@ -197,7 +230,7 @@ Every tool you add is rent, paid on every call, forever. That reframes the desig
 
 ## Status
 
-The substrate (`look`/`eval`) is exercised live against real sites. The agent loop, guards, stores, replay, run, and provider adapters are unit-tested — 253 tests, mock provider, no network. The full model-to-browser loop needs an API key.
+The substrate (`look`/`eval`) is exercised live against real sites, and the MCP server is driven end-to-end as a real subprocess. The agent loop, guards, stores, replay, run, MCP protocol, and provider adapters are unit-tested — 265 tests, mock provider, no network. The full model-to-browser loop needs an API key; the MCP path doesn't.
 
 Needs Node >= 20 and Google Chrome, which remains the one dependency you can't `npm install`. macOS, Linux, and Windows.
 

@@ -35,6 +35,8 @@ export interface Flags {
   task: string;
   auth: boolean;
   login: boolean;
+  /** Serve the six primitives to an MCP client over stdio. */
+  mcp: boolean;
   provider?: ProviderKind;
   model?: string;
   headless?: boolean;
@@ -95,6 +97,7 @@ export function parseArgs(argv: string[]): Flags {
     task: "",
     auth: false,
     login: false,
+    mcp: false,
     record: undefined,
     heal: false,
     replay: undefined,
@@ -134,6 +137,7 @@ export function parseArgs(argv: string[]): Flags {
     switch (a) {
       case "auth": positional.length === 0 ? (f.auth = true) : positional.push(a); break;
       case "login": positional.length === 0 ? (f.login = true) : positional.push(a); break;
+      case "mcp": positional.length === 0 ? (f.mcp = true) : positional.push(a); break;
       case "replay":
         // The next token is the trace name only when it exists and is not another flag.
         if (positional.length === 0 && f.replay === undefined) {
@@ -236,6 +240,8 @@ USAGE
   echo "<task>" | pixelpi      run a piped task and exit
   pixelpi auth                 set up or change your API key / model
   pixelpi login [url]          open a headed browser to sign in; saves the session
+  pixelpi mcp                  serve the six primitives to an MCP client over stdio
+                               (no API key — the client's model drives it)
   pixelpi "<task>" --record [name]   record a run; then offers to make it reusable
   pixelpi replay <name|path>         replay a saved trace (free, no model)
   pixelpi replay <name|path> --heal  replay with one-step self-healing on drift
@@ -252,6 +258,7 @@ EXAMPLES
   pixelpi login https://example.com   then: pixelpi --profile "do X while logged in"
   pixelpi run price --over queries.csv --concurrency 8 --out results.jsonl
   pixelpi run price --query "wireless mouse"
+  pixelpi mcp --allow-domains example.com   serve MCP, fenced to one domain
 
 FLAGS
   -m, --model <id>      model (default: config or claude-sonnet-4-6)
@@ -671,6 +678,22 @@ async function main(): Promise<void> {
   const useColor =
     !flags.noColor && !process.env.NO_COLOR && !!stdout.isTTY && process.env.TERM !== "dumb";
   setColorEnabled(useColor);
+
+  if (flags.mcp) {
+    // Serves the client's model, not ours — no provider, no API key, no onboarding.
+    // Imported lazily so the ai package never loads on this path.
+    const { runMcpServer } = await import("./mcp");
+    await runMcpServer({
+      headless: flags.headless !== false,
+      profileDir: resolveProfile(flags.profile),
+      storePath: flags.store ?? ".pixelpi-store.json",
+      allowDomains: flags.allowDomains,
+      dryRun: flags.dryRun,
+      confirm: flags.confirm,
+      version: VERSION,
+    });
+    return;
+  }
 
   if (flags.auth) {
     if (!interactive) throw new PixelpiProviderError("`pixelpi auth` needs an interactive terminal.");

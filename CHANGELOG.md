@@ -11,6 +11,27 @@ packages version independently and are only listed when they changed.
 
 ## [Unreleased]
 
+### Added
+
+- **`pixelpi mcp` — an MCP server over stdio.** One line of config in Claude Code or Cursor and
+  the six primitives are available to whatever model that client already pays for; no API key,
+  no provider setup. This is the form factor the context-budget claim was always about: in a CLI
+  nobody sees a tool definition, but MCP serializes them into the prompt on every call, and here
+  it is 1,196 tokens against Playwright MCP's 5,953.
+
+  Supports `--allow-domains`, `--dry-run`, `--confirm`, `--profile`, and `--store`. Under
+  `--confirm` there is no TTY to ask at, so consequential actions are refused with the reason
+  handed back to the calling model. Chrome launches on the first tool call rather than at
+  startup, so listing tools costs nothing, and it is closed on client disconnect, SIGINT, and
+  SIGTERM — an orphaned headless Chrome would hold the profile lock and break the next run.
+
+  Hand-rolled rather than built on `@modelcontextprotocol/sdk`, which pulls express, hono, cors,
+  jose, ajv and zod for what is, on stdio, five request types.
+
+- **A test that guards the thesis.** `mcp.test.ts` asserts the six tool definitions stay under
+  the published token budget, so a seventh tool or a description that grows fails CI before it
+  quietly invalidates the README.
+
 ## [0.5.0] — 2026-08-11
 
 Also releases `@josharsh/pixelpi-cdp` 0.3.0. `look()`'s output changes shape in this release:

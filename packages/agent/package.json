@@ -65,5 +65,8 @@
     "@josharsh/pixelpi-ai": "workspace:*",
     "@josharsh/pixelpi-cdp": "workspace:*",
     "@josharsh/pixelpi-core": "workspace:*"
+  },
+  "devDependencies": {
+    "js-tiktoken": "^1.0.21"
   }
 }

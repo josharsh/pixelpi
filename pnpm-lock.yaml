@@ -59,6 +59,10 @@ importers:
       '@josharsh/pixelpi-core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      js-tiktoken:
+        specifier: ^1.0.21
+        version: 1.0.21
 
   packages/ai:
     dependencies:
