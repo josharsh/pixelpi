@@ -13,6 +13,7 @@ export interface ToolUseBlock {
   id: string;
   name: string;
   input: Record<string, unknown>;
+  thoughtSignature?: string;
 }
 
 export interface ToolResultBlock {
@@ -71,7 +72,7 @@ export interface LLMProvider {
   complete(req: CompletionRequest): Promise<CompletionResponse>;
 }
 
-export type ProviderKind = "anthropic" | "openai";
+export type ProviderKind = "anthropic" | "openai" | "gemini";
 
 /** Declarative model selection. `model` is the vendor model id. */
 export interface ModelSpec {

@@ -262,7 +262,7 @@ EXAMPLES
 
 FLAGS
   -m, --model <id>      model (default: config or claude-sonnet-4-6)
-      --provider <n>    anthropic | openai
+      --provider <n>    anthropic | openai | gemini
       --no-headless     show the Chrome window
       --store <path>    durable JSON store (default: .pixelpi-store.json)
       --profile         reuse the persistent profile at ~/.pixelpi/profile

@@ -16,7 +16,7 @@ function errMsg(err: unknown): string {
 
 const HELP = `commands:
   /model [id]        show or switch the model (keeps the conversation)
-  /provider <name>   switch provider (anthropic | openai)
+  /provider <name>   switch provider (anthropic | openai | gemini)
   /headless on|off   headless preference for the next browser launch
   /new               start a fresh conversation + browser
   /store [key]       list stored keys, or print one value
@@ -86,8 +86,8 @@ export async function startRepl(
         }
         break;
       case "provider": {
-        if (arg !== "anthropic" && arg !== "openai") {
-          stdout.write("usage: /provider anthropic|openai\n");
+        if (arg !== "anthropic" && arg !== "openai" && arg !== "gemini") {
+          stdout.write("usage: /provider anthropic|openai|gemini\n");
           break;
         }
         const cred = resolveCredential(arg, loadConfig());

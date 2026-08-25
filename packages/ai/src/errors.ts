@@ -14,6 +14,7 @@ export class PixelpiProviderError extends Error {
 const KEY_PAGE: Record<ProviderKind, string> = {
   anthropic: "https://console.anthropic.com/settings/keys",
   openai: "https://platform.openai.com/api-keys",
+  gemini: "https://aistudio.google.com/app/apikey",
 };
 
 /**

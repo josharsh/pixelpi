@@ -1,7 +1,7 @@
 {
   "name": "@josharsh/pixelpi-ai",
   "version": "0.1.0",
-  "description": "Model-agnostic LLM client for the pixelpi browser agent (Anthropic + OpenAI).",
+  "description": "Model-agnostic LLM client for the pixelpi browser agent (Anthropic + OpenAI + Gemini).",
   "type": "module",
   "types": "./src/index.ts",
   "main": "./dist/index.js",
@@ -57,6 +57,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
+    "@google/genai": "^2.18.0",
     "openai": "^6.42.0"
   }
 }

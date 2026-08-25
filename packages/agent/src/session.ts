@@ -5,7 +5,7 @@ import type { AgentEvent, AgentResult, LLMMessage, Store, Tool, Usage } from "@j
 import { launchChrome, createBrowserTools } from "@josharsh/pixelpi-cdp";
 import type { CdpSession, PendingAction, Skill } from "@josharsh/pixelpi-cdp";
 import { buildSystemPrompt } from "./prompt";
-import type { ResolvedSettings } from "./config";
+import { ENV_VAR, type ResolvedSettings } from "./config";
 import type { PixelpiSession, PixelpiSessionOptions } from "./types";
 
 /** Collect the one-line descriptions of installed skills, for the system prompt and /skills. */
@@ -159,7 +159,7 @@ export async function createBrowserAgentSession(opts: PixelpiSessionOptions): Pr
     storePath: opts.storePath ?? ".pixelpi-store.json",
     apiKey: spec.apiKey,
     keySource: spec.apiKey ? "config" : "none",
-    envVar: spec.provider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY",
+    envVar: ENV_VAR[spec.provider],
   };
   const session = createPixelpiSession({
     settings,
