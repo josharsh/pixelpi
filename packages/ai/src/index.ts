@@ -4,6 +4,7 @@ export { PixelpiProviderError, resolveApiKey, wrapProviderError } from "./errors
 import type { LLMProvider, ModelSpec } from "./types.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { OpenAIProvider } from "./openai.js";
+import { GeminiProvider } from "./gemini.js";
 
 export {
   AnthropicProvider,
@@ -23,6 +24,15 @@ export {
   fromOpenAIResponse,
 } from "./openai.js";
 
+export {
+  GeminiProvider,
+  toGeminiContents,
+  toGeminiTools,
+  mapGeminiFinishReason,
+  fromGeminiContent,
+  fromGeminiResponse,
+} from "./gemini.js";
+
 export function createProvider(spec: ModelSpec): LLMProvider {
   const opts = { apiKey: spec.apiKey, baseURL: spec.baseURL, model: spec.model };
   switch (spec.provider) {
@@ -30,6 +40,8 @@ export function createProvider(spec: ModelSpec): LLMProvider {
       return new AnthropicProvider(opts);
     case "openai":
       return new OpenAIProvider(opts);
+    case "gemini":
+      return new GeminiProvider(opts);
   }
 }
 

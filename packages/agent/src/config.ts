@@ -6,11 +6,13 @@ import type { ProviderKind } from "@josharsh/pixelpi-ai";
 export const DEFAULT_MODEL: Record<ProviderKind, string> = {
   anthropic: "claude-sonnet-4-6",
   openai: "gpt-4o",
+  gemini: "gemini-3.7-flash",
 };
 
 export const ENV_VAR: Record<ProviderKind, string> = {
   anthropic: "ANTHROPIC_API_KEY",
   openai: "OPENAI_API_KEY",
+  gemini: "GEMINI_API_KEY",
 };
 
 /** Default persistent profile dir, used when `--profile` is passed with no value. */

@@ -11,10 +11,15 @@ import {
   type ResolvedSettings,
 } from "./config";
 
-const LABEL: Record<ProviderKind, string> = { anthropic: "Anthropic", openai: "OpenAI" };
+const LABEL: Record<ProviderKind, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  gemini: "Google Gemini",
+};
 const KEY_URL: Record<ProviderKind, string> = {
   anthropic: "https://console.anthropic.com/settings/keys",
   openai: "https://platform.openai.com/api-keys",
+  gemini: "https://aistudio.google.com/app/apikey",
 };
 const MODELS: Record<ProviderKind, { value: string; label: string; hint?: string }[]> = {
   anthropic: [
@@ -24,6 +29,10 @@ const MODELS: Record<ProviderKind, { value: string; label: string; hint?: string
   openai: [
     { value: "gpt-4o", label: "gpt-4o", hint: "recommended" },
     { value: "gpt-4o-mini", label: "gpt-4o-mini", hint: "cheap & fast" },
+  ],
+  gemini: [
+    { value: "gemini-3.7-flash", label: "gemini-3.7-flash", hint: "recommended" },
+    { value: "gemini-3.6-flash", label: "gemini-3.6-flash", hint: "previous release" },
   ],
 };
 
@@ -40,8 +49,10 @@ function unlessCancelled<T>(value: T): Exclude<T, symbol> {
 function detectProvider(): ProviderKind | undefined {
   const a = (process.env.ANTHROPIC_API_KEY ?? "").trim() !== "";
   const o = (process.env.OPENAI_API_KEY ?? "").trim() !== "";
-  if (a && !o) return "anthropic";
-  if (o && !a) return "openai";
+  const g = (process.env.GEMINI_API_KEY ?? "").trim() !== "";
+  if (a && !o && !g) return "anthropic";
+  if (o && !a && !g) return "openai";
+  if (g && !a && !o) return "gemini";
   return undefined;
 }
 
@@ -61,6 +72,7 @@ export async function runOnboarding(): Promise<PixelpiConfig> {
       options: [
         { value: "anthropic" as const, label: "Anthropic", hint: "Claude — recommended" },
         { value: "openai" as const, label: "OpenAI", hint: "GPT" },
+        { value: "gemini" as const, label: "Google Gemini", hint: "Gemini 3.x" },
       ],
     }),
   );
