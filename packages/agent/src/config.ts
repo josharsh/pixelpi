@@ -6,7 +6,7 @@ import type { ProviderKind } from "@josharsh/pixelpi-ai";
 export const DEFAULT_MODEL: Record<ProviderKind, string> = {
   anthropic: "claude-sonnet-4-6",
   openai: "gpt-4o",
-  gemini: "gemini-3.6-flash",
+  gemini: "gemini-3.7-flash",
 };
 
 export const ENV_VAR: Record<ProviderKind, string> = {

@@ -1,5 +1,5 @@
 import { GoogleGenAI, type Content, type FunctionDeclaration, type GenerateContentResponse, type Part, type Tool } from "@google/genai";
-import { resolveApiKey, wrapProviderError } from "./errors.js";
+import { PixelpiProviderError, resolveApiKey, wrapProviderError } from "./errors.js";
 import type {
   CompletionRequest,
   CompletionResponse,
@@ -33,21 +33,19 @@ export function toGeminiContents(messages: LLMMessage[]): Content[] {
           if (block.text !== undefined) parts.push({ text: block.text });
           break;
         case "tool_use": {
-          const partObj: Record<string, unknown> = {
-            functionCall: {
-              id: block.id,
-              name: block.name,
-              args: block.input,
-            },
-          };
-          if (block.thoughtSignature) {
-            partObj.thoughtSignature = block.thoughtSignature;
-          }
-          parts.push(partObj as unknown as Part);
+          parts.push({
+            functionCall: { id: block.id, name: block.name, args: block.input },
+            ...(block.thoughtSignature ? { thoughtSignature: block.thoughtSignature } : {}),
+          });
           break;
         }
         case "tool_result": {
-          const toolName = toolNameMap.get(block.toolUseId) || block.toolUseId;
+          const toolName = toolNameMap.get(block.toolUseId);
+          if (!toolName) {
+            throw new PixelpiProviderError(
+              `tool_result references unknown tool_use id "${block.toolUseId}"; Gemini needs the function name.`,
+            );
+          }
           parts.push({
             functionResponse: {
               id: block.toolUseId,
@@ -98,29 +96,37 @@ export function mapGeminiFinishReason(reason?: string | null, hasToolUse?: boole
 export function fromGeminiContent(parts?: Part[]): ContentBlock[] {
   const out: ContentBlock[] = [];
   if (!parts) return out;
-  for (const part of parts) {
-    if (part.text !== undefined) {
+  parts.forEach((part, index) => {
+    // Thinking models emit `thought: true` parts that also carry text; they are not the answer.
+    if (part.text !== undefined && !part.thought) {
       out.push({ type: "text", text: part.text });
     }
     if (part.functionCall) {
-      const p = part as { thoughtSignature?: string; functionCall: { id?: string; name?: string; args?: Record<string, unknown> } };
+      const name = part.functionCall.name || "";
       out.push({
         type: "tool_use",
-        id: part.functionCall.id || part.functionCall.name || "call",
-        name: part.functionCall.name || "",
-        input: (part.functionCall.args ?? {}) as Record<string, unknown>,
-        ...(p.thoughtSignature ? { thoughtSignature: p.thoughtSignature } : {}),
+        // `id` is optional in the API; fall back to something unique so parallel calls stay distinct.
+        id: part.functionCall.id || `${name || "call"}_${index}`,
+        name,
+        input: part.functionCall.args ?? {},
+        ...(part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}),
       });
     }
-  }
+  });
   return out;
 }
 
 export function fromGeminiResponse(
   res: GenerateContentResponse,
-  fallbackModel = "gemini-3.6-flash",
+  fallbackModel = "",
 ): CompletionResponse {
   const candidate = res.candidates?.[0];
+  if (!candidate && res.promptFeedback?.blockReason) {
+    throw new PixelpiProviderError(
+      `Gemini blocked the prompt (${res.promptFeedback.blockReason})` +
+        (res.promptFeedback.blockReasonMessage ? `: ${res.promptFeedback.blockReasonMessage}` : "."),
+    );
+  }
   const content = fromGeminiContent(candidate?.content?.parts);
   const hasToolUse = content.some((b) => b.type === "tool_use");
   const stopReason = mapGeminiFinishReason(candidate?.finishReason, hasToolUse);
@@ -130,7 +136,9 @@ export function fromGeminiResponse(
     stopReason,
     usage: {
       inputTokens: res.usageMetadata?.promptTokenCount ?? 0,
-      outputTokens: res.usageMetadata?.candidatesTokenCount ?? 0,
+      // Thinking tokens are billed as output but excluded from candidatesTokenCount.
+      outputTokens:
+        (res.usageMetadata?.candidatesTokenCount ?? 0) + (res.usageMetadata?.thoughtsTokenCount ?? 0),
     },
     model: res.modelVersion || fallbackModel,
   };
@@ -146,13 +154,18 @@ export class GeminiProvider implements LLMProvider {
     const apiKey = resolveApiKey("gemini", opts.apiKey, "GEMINI_API_KEY");
     this.client = new GoogleGenAI({
       apiKey,
-      ...(opts.baseURL ? { apiEndpoint: opts.baseURL } : {}),
+      httpOptions: {
+        ...(opts.baseURL ? { baseUrl: opts.baseURL } : {}),
+        // Match the Anthropic/OpenAI SDK defaults (2 retries). `attempts` counts the first call.
+        // Short maxDelay (seconds) keeps Ctrl-C responsive between attempts.
+        retryOptions: { attempts: 3, maxDelay: 5 },
+      },
     });
     this.defaultModel = opts.model;
   }
 
   async complete(req: CompletionRequest): Promise<CompletionResponse> {
-    const model = req.model ?? this.defaultModel ?? "gemini-3.6-flash";
+    const model = req.model ?? this.defaultModel ?? "";
     const contents = toGeminiContents(req.messages);
 
     const config: Record<string, unknown> = {};
@@ -162,37 +175,16 @@ export class GeminiProvider implements LLMProvider {
     if (req.tools && req.tools.length > 0) config.tools = toGeminiTools(req.tools);
     if (req.signal) config.abortSignal = req.signal;
 
-    const maxRetries = 4;
-    const baseDelayMs = 5_000;
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        const res = await this.client.models.generateContent({ model, contents, config });
-        return fromGeminiResponse(res, model);
-      } catch (err) {
-        // Never swallow cancellation.
-        if (err instanceof Error && (err.name === "AbortError" || err.name === "APIUserAbortError")) {
-          throw err;
-        }
-
-        const status = (err as { status?: number } | undefined)?.status;
-
-        // Retry on 429 (rate-limit) with exponential back-off.
-        if (status === 429 && attempt < maxRetries) {
-          const delayMs = baseDelayMs * 2 ** attempt; // 5s, 10s, 20s, 40s
-          console.error(
-            `[gemini] rate-limited (429) — retrying in ${delayMs / 1000}s (attempt ${attempt + 1}/${maxRetries})…`,
-          );
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
-          continue;
-        }
-
-        throw wrapProviderError("gemini", "GEMINI_API_KEY", model, err);
+    try {
+      const res = await this.client.models.generateContent({ model, contents, config });
+      return fromGeminiResponse(res, model);
+    } catch (err) {
+      // Never swallow cancellation.
+      if (err instanceof Error && (err.name === "AbortError" || err.name === "APIUserAbortError")) {
+        throw err;
       }
+      if (err instanceof PixelpiProviderError) throw err;
+      throw wrapProviderError("gemini", "GEMINI_API_KEY", model, err);
     }
-
-    // unreachable — loop always returns or throws
-    /* c8 ignore next */
-    throw new Error("unreachable");
   }
 }

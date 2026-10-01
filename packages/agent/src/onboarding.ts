@@ -31,8 +31,8 @@ const MODELS: Record<ProviderKind, { value: string; label: string; hint?: string
     { value: "gpt-4o-mini", label: "gpt-4o-mini", hint: "cheap & fast" },
   ],
   gemini: [
-    { value: "gemini-3.6-flash", label: "gemini-3.6-flash", hint: "recommended" },
-    { value: "gemini-3.7-flash", label: "gemini-3.7-flash", hint: "most capable" },
+    { value: "gemini-3.7-flash", label: "gemini-3.7-flash", hint: "recommended" },
+    { value: "gemini-3.6-flash", label: "gemini-3.6-flash", hint: "previous release" },
   ],
 };
 
