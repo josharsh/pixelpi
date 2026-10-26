@@ -1,0 +1,70 @@
+{
+  "retrieved_at": "2026-10-26T07:18:09.574376+00:00",
+  "source": "https://pomerado.ai/",
+  "chart_asset_url": "https://pomerado.ai/_next/static/immutable/chunks/2dbhkewqp_685.js",
+  "chart_asset_sha256": "249087e7fe84266a5c8928f0ff0e1f3fc842fca3b5654c5cc5c8b2894c4e305e",
+  "pomerado_repo_commit": "1d8a016862b6b1c8e43c770a75514d487efb8bc5",
+  "pixelpi_commit": "2579d5563180f3d18eb4bebe5b6631439b583a65",
+  "task_count": 30,
+  "attempts_per_task": 1,
+  "apps": [
+    "OpenEMR",
+    "OpenMRS",
+    "Dolibarr",
+    "SENAITE",
+    "ERPNext",
+    "InvenTree",
+    "Zoho Books",
+    "Moodle",
+    "Koha",
+    "OrangeHRM",
+    "Snipe-IT",
+    "SuiteCRM",
+    "vtiger",
+    "Twenty",
+    "Invoice Ninja",
+    "Firefly III",
+    "QuickBooks Online",
+    "Hops",
+    "Request Tracker",
+    "osTicket",
+    "iTop",
+    "Redmine",
+    "MantisBT",
+    "Paperless-ngx",
+    "Discover & Go"
+  ],
+  "results": [
+    {
+      "label": "Instinct",
+      "success_percent": 60.0,
+      "median_minutes_per_task": 13.47,
+      "reported_model_cost_usd_per_task": null
+    },
+    {
+      "label": "Muse",
+      "success_percent": 70.0,
+      "median_minutes_per_task": 24.28,
+      "reported_model_cost_usd_per_task": null
+    },
+    {
+      "label": "Computer Use/Astra",
+      "success_percent": 76.67,
+      "median_minutes_per_task": 8.74,
+      "reported_model_cost_usd_per_task": 13.63
+    },
+    {
+      "label": "Pomerado/Luna",
+      "success_percent": 90.0,
+      "median_minutes_per_task": 5.94,
+      "reported_model_cost_usd_per_task": 0.02
+    },
+    {
+      "label": "Pomerado/Astra",
+      "success_percent": 100.0,
+      "median_minutes_per_task": 4.62,
+      "reported_model_cost_usd_per_task": 1.62
+    }
+  ],
+  "qualification": "Vendor-reported; not independently reproduced. Pomerado uses Codex with pre-minted APIs; costs are model tokens at list price. No task prompts, graders, seeded environments, or per-task trajectories found in checked public materials."
+}

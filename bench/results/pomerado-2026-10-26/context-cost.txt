@@ -1,0 +1,29 @@
+starting @playwright/mcp… ok (25 tools)
+measuring HackerNews… pixelpi=4107 mcp=12481
+measuring ArXiv… pixelpi=4909 mcp=13280
+measuring GitHub… pixelpi=2548 mcp=7481
+measuring Coursera… pixelpi=3245 mcp=9570
+measuring HuggingFace… pixelpi=2742 mcp=9329
+measuring Apple… pixelpi=18465 mcp=27258
+
+## Fixed cost — tool definitions, paid on every call
+
+| harness | tools | tokens |
+|---|---:|---:|
+| **pixelpi** | 6 | **1,196** |
+| Playwright MCP | 25 | 6,551 |
+
+**5.5× less context before the agent looks at anything.**
+
+## Per-page cost — the whole page, every element addressable
+
+| Site | pixelpi | calls | refs | Playwright MCP | ratio |
+|---|---:|---:|---:|---:|---:|
+| HackerNews | 4,107 | 2 | 355 | 12,481 | **3.04×** |
+| ArXiv | 4,909 | 3 | 446 | 13,280 | **2.71×** |
+| GitHub | 2,548 | 1 | 185 | 7,481 | **2.94×** |
+| Coursera | 3,245 | 2 | 225 | 9,570 | **2.95×** |
+| HuggingFace | 2,742 | 2 | 224 | 9,329 | **3.40×** |
+| Apple | 18,465 | 2 | 206 | 27,258 | **1.48×** |
+
+6/6 sites comparable. Mean per-page advantage **2.75×**. Tokens counted with o200k_base, not a chars/4 estimate. pixelpi figures are the FULL page — every ref reachable, paging included.

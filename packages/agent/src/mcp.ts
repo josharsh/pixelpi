@@ -19,7 +19,12 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { launchChrome, createBrowserTools } from "@josharsh/pixelpi-cdp";
 import type { CdpSession } from "@josharsh/pixelpi-cdp";
-import { JsonFileStore, MemoryStore, type Tool, type ToolContext } from "@josharsh/pixelpi-core";
+import {
+  JsonFileStore,
+  MemoryStore,
+  type Tool,
+  type ToolContext,
+} from "@josharsh/pixelpi-core";
 
 /** Protocol version we speak. We echo the client's instead when it names one. */
 const PROTOCOL_VERSION = "2025-06-18";
@@ -82,18 +87,36 @@ function replyError(id: Request["id"], code: number, message: string): void {
  * that never depend on the session, so we build them against an inert stub and let the
  * real, session-bound tools come into existence on the first actual call.
  */
-export function toolDefinitions(): { name: string; description: string; inputSchema: Record<string, unknown> }[] {
-  const inert = { on: () => {}, off: () => {}, send: async () => ({}) } as unknown as CdpSession;
-  const tools = createBrowserTools({ session: inert, store: new MemoryStore() });
-  return tools.map((t: Tool) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }));
+export function toolDefinitions(): {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}[] {
+  const inert = {
+    on: () => {},
+    off: () => {},
+    send: async () => ({}),
+  } as unknown as CdpSession;
+  const tools = createBrowserTools({
+    session: inert,
+    store: new MemoryStore(),
+  });
+  return tools.map((t: Tool) => ({
+    name: t.name,
+    description: t.description,
+    inputSchema: t.inputSchema,
+  }));
 }
 
 // ── Server ──────────────────────────────────────────────────────────────────
 
 export function createMcpServer(opts: McpServerOptions = {}) {
   let browser: { tools: Tool[]; close: () => Promise<void> } | undefined;
-  let booting: Promise<{ tools: Tool[]; close: () => Promise<void> }> | undefined;
+  let booting:
+    | Promise<{ tools: Tool[]; close: () => Promise<void> }>
+    | undefined;
   let closed = false;
+  const pending = new Map<Request["id"], AbortController>();
 
   /**
    * Chrome starts on the first tool call, not at startup, so an idle server costs nothing.
@@ -104,7 +127,9 @@ export function createMcpServer(opts: McpServerOptions = {}) {
     if (browser) return browser.tools;
     if (!booting) {
       booting = (async () => {
-        log(`launching Chrome (${opts.headless === false ? "headed" : "headless"})…`);
+        log(
+          `launching Chrome (${opts.headless === false ? "headed" : "headless"})…`,
+        );
         const { session, close } = await launchChrome({
           headless: opts.headless !== false,
           userDataDir: opts.profileDir,
@@ -132,6 +157,8 @@ export function createMcpServer(opts: McpServerOptions = {}) {
   async function shutdown(): Promise<void> {
     if (closed) return;
     closed = true;
+    for (const controller of pending.values())
+      controller.abort(new Error("Server shutting down"));
     if (booting) {
       // Never leave a headless Chrome holding the profile lock — an orphan makes the
       // next run fail with a singleton error that reads like a bug in pixelpi.
@@ -145,32 +172,54 @@ export function createMcpServer(opts: McpServerOptions = {}) {
     }
   }
 
-  async function callTool(id: Request["id"], params: Record<string, unknown> | undefined): Promise<void> {
-    const name = typeof params?.name === "string" ? params.name : undefined;
-    if (!name) return replyError(id, INVALID_PARAMS, "tools/call requires a string 'name'");
+  function prepare(req: Request): void {
+    if (req.method === "tools/call" && !pending.has(req.id))
+      pending.set(req.id, new AbortController());
+  }
 
-    const args = (params?.arguments as Record<string, unknown> | undefined) ?? {};
-    let tools: Tool[];
+  async function callTool(
+    id: Request["id"],
+    params: Record<string, unknown> | undefined,
+  ): Promise<void> {
+    const controller = pending.get(id) ?? new AbortController();
+    pending.set(id, controller);
     try {
-      tools = await browserTools();
+      controller.signal.throwIfAborted();
+      if (closed) throw new Error("Server is closed");
+      const name = typeof params?.name === "string" ? params.name : undefined;
+      if (!name)
+        return replyError(
+          id,
+          INVALID_PARAMS,
+          "tools/call requires a string 'name'",
+        );
+      if (!toolDefinitions().some((t) => t.name === name))
+        return replyError(id, INVALID_PARAMS, `unknown tool: ${name}`);
+      const args = params?.arguments ?? {};
+      if (!args || typeof args !== "object" || Array.isArray(args))
+        return replyError(id, INVALID_PARAMS, "arguments must be an object");
+      const tools = await browserTools();
+      controller.signal.throwIfAborted();
+      const tool = tools.find((t) => t.name === name)!;
+      const ctx: ToolContext = { signal: controller.signal, emit: () => {} };
+      const result = await tool.execute(args as Record<string, unknown>, ctx);
+      reply(id, {
+        content: [
+          { type: "text", text: result.content },
+          ...(result.images ?? []).map((image) => ({
+            type: "image",
+            ...image,
+          })),
+        ],
+        isError: result.isError ?? false,
+      });
     } catch (e) {
-      // A browser that won't start is an environment problem, not a bad request: surface
-      // it as a tool error so the calling model can read it and tell the user.
-      return reply(id, {
-        content: [{ type: "text", text: `Could not start Chrome: ${(e as Error).message}` }],
+      reply(id, {
+        content: [{ type: "text", text: (e as Error).message }],
         isError: true,
       });
-    }
-
-    const tool = tools.find((t) => t.name === name);
-    if (!tool) return replyError(id, INVALID_PARAMS, `unknown tool: ${name}`);
-
-    const ctx: ToolContext = { signal: new AbortController().signal, emit: () => {} };
-    try {
-      const result = await tool.execute(args, ctx);
-      reply(id, { content: [{ type: "text", text: result.content }], isError: result.isError ?? false });
-    } catch (e) {
-      reply(id, { content: [{ type: "text", text: `${name} failed: ${(e as Error).message}` }], isError: true });
+    } finally {
+      pending.delete(id);
     }
   }
 
@@ -187,8 +236,12 @@ export function createMcpServer(opts: McpServerOptions = {}) {
         });
         return;
       }
-      case "notifications/initialized":
       case "notifications/cancelled":
+        pending
+          .get(req.params?.requestId as Request["id"])
+          ?.abort(new Error("Request cancelled"));
+        return;
+      case "notifications/initialized":
         return; // notifications carry no id and want no response
       case "ping":
         return reply(req.id, {});
@@ -199,11 +252,15 @@ export function createMcpServer(opts: McpServerOptions = {}) {
       default:
         // Notifications we don't know about must stay silent; requests get an error.
         if (req.id === undefined || req.id === null) return;
-        return replyError(req.id, METHOD_NOT_FOUND, `unknown method: ${req.method}`);
+        return replyError(
+          req.id,
+          METHOD_NOT_FOUND,
+          `unknown method: ${req.method}`,
+        );
     }
   }
 
-  return { handle, shutdown, browserTools };
+  return { handle, shutdown, browserTools, prepare };
 }
 
 export async function runMcpServer(opts: McpServerOptions = {}): Promise<void> {
@@ -219,7 +276,9 @@ export async function runMcpServer(opts: McpServerOptions = {}): Promise<void> {
   process.on("SIGINT", () => void stop("SIGINT"));
   process.on("SIGTERM", () => void stop("SIGTERM"));
 
-  log(`ready — 6 tools, stdio${opts.allowDomains?.length ? `, fenced to ${opts.allowDomains.join(", ")}` : ""}`);
+  log(
+    `ready — 6 tools, stdio${opts.allowDomains?.length ? `, fenced to ${opts.allowDomains.join(", ")}` : ""}`,
+  );
 
   // Messages are handled in arrival order: two look() calls racing the same page would
   // interleave CDP traffic and hand the model a snapshot of a page mid-navigation.
@@ -231,13 +290,23 @@ export async function runMcpServer(opts: McpServerOptions = {}): Promise<void> {
     try {
       req = JSON.parse(text);
     } catch {
-      write({ jsonrpc: "2.0", id: null, error: { code: PARSE_ERROR, message: "invalid JSON" } });
+      write({
+        jsonrpc: "2.0",
+        id: null,
+        error: { code: PARSE_ERROR, message: "invalid JSON" },
+      });
+      return;
+    }
+    server.prepare(req);
+    if (req.method === "notifications/cancelled") {
+      void server.handle(req);
       return;
     }
     chain = chain.then(() =>
       server.handle(req).catch((e) => {
         log(`handler error: ${(e as Error).message}`);
-        if (req.id !== undefined && req.id !== null) replyError(req.id, INTERNAL_ERROR, (e as Error).message);
+        if (req.id !== undefined && req.id !== null)
+          replyError(req.id, INTERNAL_ERROR, (e as Error).message);
       }),
     );
   });

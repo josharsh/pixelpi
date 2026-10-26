@@ -1,5 +1,9 @@
 # bench
 
+[PixelPi vs Playwright: controlled comparison and technical article](PLAYWRIGHT_COMPARISON.md) — 150 no-model trials, identical local fixtures, independent final-state checks, raw transcripts, and a shareable chart. Run with `pnpm bench:compare`.
+
+[2026-10-26 Pomerado comparison investigation](POMERADO_COMPARISON.md): fresh context measurements, public-claim audit, and real-browser replay diagnostics. The exact enterprise benchmark was unavailable; no head-to-head success claim is made.
+
 **3.3× less context than Playwright MCP per page, and 5× less before the agent looks at anything.** Both numbers come from `efficiency.ts`, which you can run yourself with no API key. `tasks.ts` is a separate check that the lean view still completes real tasks.
 
 ## Why the baseline is Playwright MCP, not raw DOM
@@ -62,7 +66,11 @@ Five retrieval tasks on accessible sites, checked against ground truth pulled fr
 
 ```bash
 pnpm bench:tasks
+# Optional machine-readable output:
+pnpm bench:tasks --out results.json
 ```
+
+Setup/provider errors and unavailable ground truth make the run incomplete (success `N/A`, exit 2), rather than a 0% task score. The runner stops after fatal credential/model/quota errors. A complete run with task failures exits 1. Run scoring regressions with `node --import tsx --test bench/task-scoring.test.ts`.
 
 Measured 2026-06-17, `claude-sonnet-4-6`:
 

@@ -426,6 +426,7 @@ async function runRow(rc: RowContext): Promise<RowOutcome> {
       ok: result.ok,
       output,
       drift: result.drift,
+      error: result.error,
       ms: Date.now() - start,
     };
   } catch (e) {

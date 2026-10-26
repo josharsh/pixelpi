@@ -11,16 +11,22 @@ export type MatchResult = { ref: number } | { drift: true; reason: string };
  * 4. still zero -> drift with a precise reason.
  */
 export function resolveTarget(refs: Ref[], target: Target): MatchResult {
-  const exact = refs.filter((r) => r.role === target.role && r.name === target.name);
-  if (exact.length === 1) return { ref: exact[0]!.ref };
-  if (exact.length > 1) return { ref: (exact[target.ordinal] ?? exact[0]!).ref };
+  refs = refs.filter((r) => (r.frame ?? "") === (target.frame ?? ""));
+  const exact = refs.filter(
+    (r) => r.role === target.role && r.name === target.name,
+  );
+  if (exact[target.ordinal]) return { ref: exact[target.ordinal]!.ref };
+  if (exact.length)
+    return {
+      drift: true,
+      reason: "Recorded target ordinal is no longer present",
+    };
 
   const wantName = target.name.trim().toLowerCase();
   const relaxed = refs.filter(
     (r) => r.role === target.role && r.name.trim().toLowerCase() === wantName,
   );
-  if (relaxed.length === 1) return { ref: relaxed[0]!.ref };
-  if (relaxed.length > 1) return { ref: (relaxed[target.ordinal] ?? relaxed[0]!).ref };
+  if (relaxed[target.ordinal]) return { ref: relaxed[target.ordinal]!.ref };
 
   const sameRole = refs.filter((r) => r.role === target.role).length;
   const reason =

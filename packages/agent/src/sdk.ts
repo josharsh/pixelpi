@@ -27,6 +27,8 @@ import type { Reporter } from "./dashboard";
 
 /** Result of calling a trace once. output is the last eval value (informational, never asserted). */
 export interface RunOnceResult {
+  error?: string;
+  verified?: boolean;
   ok: boolean;
   output?: unknown;
   drift?: { step: number; reason: string };
@@ -113,7 +115,7 @@ export function loadTrace(nameOrPath: string, defaults: LoadOptions = {}): Calla
       heal: false,
       signal: opts.signal ?? defaults.signal,
     });
-    return { ok: result.ok, output: result.output, drift: result.drift };
+    return { ok: result.ok, output: result.output, drift: result.drift, error: result.error, verified: result.verified };
   }) as CallableTrace;
 
   callable.over = async (

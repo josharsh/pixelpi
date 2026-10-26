@@ -29,3 +29,18 @@ jobs:
 
       - name: Test
         run: pnpm vitest run
+
+      - name: Benchmark harness tests
+        run: pnpm test:bench
+
+      - name: Real Chrome regressions
+        run: pnpm test:browser
+
+      - name: Browser comparison acceptance
+        run: pnpm bench:compare --repeats 1 --out /tmp/pixelpi-comparison --require-all-pass
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-comparison
+          path: /tmp/pixelpi-comparison

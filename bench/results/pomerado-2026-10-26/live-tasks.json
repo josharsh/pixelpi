@@ -1,0 +1,76 @@
+{
+  "startedAt": "2026-10-26T07:19:35.361Z",
+  "model": "claude-sonnet-4-6",
+  "suite": "pixelpi-five-retrieval-task-pilot",
+  "summary": {
+    "passed": 0,
+    "evaluated": 0,
+    "total": 5,
+    "successRate": null
+  },
+  "usage": {
+    "inputTokens": 0,
+    "outputTokens": 0
+  },
+  "estimatedObservedTokenCostUsd": 0,
+  "rows": [
+    {
+      "id": "example.com heading",
+      "status": "error",
+      "stopReason": "error",
+      "steps": 1,
+      "inTok": 0,
+      "outTok": 0,
+      "ms": 992,
+      "truth": [
+        "Example Domain"
+      ],
+      "answer": "[anthropic] API key was rejected (HTTP 401). Check ANTHROPIC_API_KEY in your .env — it may be empty, mistyped, or revoked.",
+      "err": "[anthropic] API key was rejected (HTTP 401). Check ANTHROPIC_API_KEY in your .env — it may be empty, mistyped, or revoked."
+    },
+    {
+      "id": "HN #1 title",
+      "status": "not_run",
+      "steps": 0,
+      "inTok": 0,
+      "outTok": 0,
+      "ms": 0,
+      "truth": [],
+      "answer": "",
+      "err": "[anthropic] API key was rejected (HTTP 401). Check ANTHROPIC_API_KEY in your .env — it may be empty, mistyped, or revoked."
+    },
+    {
+      "id": "Wikipedia: Eiffel Tower completed",
+      "status": "not_run",
+      "steps": 0,
+      "inTok": 0,
+      "outTok": 0,
+      "ms": 0,
+      "truth": [],
+      "answer": "",
+      "err": "[anthropic] API key was rejected (HTTP 401). Check ANTHROPIC_API_KEY in your .env — it may be empty, mistyped, or revoked."
+    },
+    {
+      "id": "Wikipedia: Apollo 11 year",
+      "status": "not_run",
+      "steps": 0,
+      "inTok": 0,
+      "outTok": 0,
+      "ms": 0,
+      "truth": [],
+      "answer": "",
+      "err": "[anthropic] API key was rejected (HTTP 401). Check ANTHROPIC_API_KEY in your .env — it may be empty, mistyped, or revoked."
+    },
+    {
+      "id": "GitHub: cli/cli latest release",
+      "status": "not_run",
+      "steps": 0,
+      "inTok": 0,
+      "outTok": 0,
+      "ms": 0,
+      "truth": [],
+      "answer": "",
+      "err": "[anthropic] API key was rejected (HTTP 401). Check ANTHROPIC_API_KEY in your .env — it may be empty, mistyped, or revoked."
+    }
+  ]
+}

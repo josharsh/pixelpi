@@ -1,0 +1,78 @@
+{
+  "recorded_at": "2026-10-26T07:23:34.974087+00:00",
+  "pixelpi_version": "0.6.1",
+  "pixelpi_commit": "2579d5563180f3d18eb4bebe5b6631439b583a65",
+  "playwright_mcp_version": "0.0.83",
+  "chrome_version": "155.0.8059.86",
+  "node_version": "20.17.0",
+  "tokenizer": "o200k_base",
+  "model_calls": 0,
+  "tool_definitions": {
+    "pixelpi": {
+      "count": 6,
+      "tokens": 1196
+    },
+    "playwright_mcp": {
+      "count": 25,
+      "tokens": 6551
+    },
+    "ratio": 5.4774247491638794
+  },
+  "pages": [
+    {
+      "site": "HackerNews",
+      "pixelpi_tokens": 4107,
+      "pixelpi_calls": 2,
+      "pixelpi_refs": 355,
+      "playwright_mcp_tokens": 12481,
+      "ratio": 3.0389578767957146
+    },
+    {
+      "site": "ArXiv",
+      "pixelpi_tokens": 4909,
+      "pixelpi_calls": 3,
+      "pixelpi_refs": 446,
+      "playwright_mcp_tokens": 13280,
+      "ratio": 2.705235282134854
+    },
+    {
+      "site": "GitHub",
+      "pixelpi_tokens": 2548,
+      "pixelpi_calls": 1,
+      "pixelpi_refs": 185,
+      "playwright_mcp_tokens": 7481,
+      "ratio": 2.936028257456829
+    },
+    {
+      "site": "Coursera",
+      "pixelpi_tokens": 3245,
+      "pixelpi_calls": 2,
+      "pixelpi_refs": 225,
+      "playwright_mcp_tokens": 9570,
+      "ratio": 2.9491525423728815
+    },
+    {
+      "site": "HuggingFace",
+      "pixelpi_tokens": 2742,
+      "pixelpi_calls": 2,
+      "pixelpi_refs": 224,
+      "playwright_mcp_tokens": 9329,
+      "ratio": 3.402261123267688
+    },
+    {
+      "site": "Apple",
+      "pixelpi_tokens": 18465,
+      "pixelpi_calls": 2,
+      "pixelpi_refs": 206,
+      "playwright_mcp_tokens": 27258,
+      "ratio": 1.4761982128350934
+    }
+  ],
+  "mean_page_ratio": 2.7513055491438436,
+  "limitations": [
+    "Different live sessions and render times; semantic equivalence of snapshots not independently verified.",
+    "Measures serialized text token counts, not billed tokens, execution speed or task success.",
+    "One visit per site; not Pomerado enterprise tasks.",
+    "Original script resolves @playwright/mcp@latest; resolved version recorded here."
+  ]
+}

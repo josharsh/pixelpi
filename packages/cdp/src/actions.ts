@@ -1,9 +1,27 @@
-import type { ActOp, CdpSession, LookMode, Snapshot, SnapshotDelta, Store } from "./types";
+import type {
+  ActOp,
+  CdpSession,
+  LookMode,
+  Snapshot,
+  SnapshotDelta,
+  Store,
+} from "./types";
 import { compactAxTree, renderRefs, MAX_REFS, type AXNode } from "./snapshot";
 import type { EvalCtx } from "./evaltool";
 import { runEval } from "./evaltool";
 import { applySkills } from "./skills";
-import { hostAllowed, isConsequentialClick, type PendingAction } from "./guardrails";
+import {
+  hostAllowed,
+  isConsequentialClick,
+  type PendingAction,
+} from "./guardrails";
+import {
+  frameScopes,
+  nodeCall,
+  scrollTarget,
+  actionable,
+  type NodeTarget,
+} from "./frames";
 
 /** The shared mutable closure state threaded through every tool. */
 export interface BrowserContext {
@@ -11,7 +29,9 @@ export interface BrowserContext {
   store: Store;
   defaultMode: LookMode;
   evalCtx: EvalCtx;
-  lastRefs: Map<number, { backendDOMNodeId: number; role: string; name: string }>;
+  lastRefs: Map<number, NodeTarget>;
+  timeoutMs: number;
+  signal?: AbortSignal;
   /** Navigation fence (#23). Empty = unrestricted. */
   allowDomains: string[];
   /** Consequential-action gate (#22). */
@@ -21,16 +41,19 @@ export interface BrowserContext {
   blockedNav?: string;
 }
 
-interface BoxModel {
-  model: { content: number[] };
-}
-
 // ── snapshot helpers ──────────────────────────────────────────────────────────
 
-async function readUrlTitle(ctx: BrowserContext): Promise<{ url: string; title: string }> {
-  const r = await runEval(ctx.evalCtx, "function(){return {url:location.href,title:document.title};}", [], {
-    world: "main",
-  });
+async function readUrlTitle(
+  ctx: BrowserContext,
+): Promise<{ url: string; title: string }> {
+  const r = await runEval(
+    ctx.evalCtx,
+    "function(){return {url:location.href,title:document.title};}",
+    [],
+    {
+      world: "main",
+    },
+  );
   if ("value" in r && r.value && typeof r.value === "object") {
     const v = r.value as { url?: string; title?: string };
     return { url: v.url ?? "", title: v.title ?? "" };
@@ -45,13 +68,30 @@ export interface LookOptions {
   offset?: number;
 }
 
-export async function look(ctx: BrowserContext, opts: LookOptions = {}): Promise<{ snapshot: Snapshot; text: string }> {
+export async function look(
+  ctx: BrowserContext,
+  opts: LookOptions = {},
+): Promise<{ snapshot: Snapshot; text: string }> {
   const mode = opts.mode ?? ctx.defaultMode;
   const { url, title } = await readUrlTitle(ctx);
+  const { targetInfo } = await ctx.session.send<{
+    targetInfo: { targetId: string };
+  }>("Target.getTargetInfo", {});
+  const targetId = targetInfo.targetId;
 
   if (mode === "screenshot") {
-    const shot = await ctx.session.send<{ data: string }>("Page.captureScreenshot", { format: "png" });
-    const snapshot: Snapshot = { url, title, refs: [], screenshot: shot.data, mode };
+    const shot = await ctx.session.send<{ data: string }>(
+      "Page.captureScreenshot",
+      { format: "png" },
+    );
+    const snapshot: Snapshot = {
+      targetId,
+      url,
+      title,
+      refs: [],
+      screenshot: shot.data,
+      mode,
+    };
     return {
       snapshot,
       text: `${title}\n${url}\n(screenshot fallback — ${shot.data.length} base64 bytes; use mode "a11y" to address elements)`,
@@ -66,37 +106,54 @@ export async function look(ctx: BrowserContext, opts: LookOptions = {}): Promise
       { world: "main" },
     );
     const html = "value" in r ? String(r.value ?? "") : "";
-    const snapshot: Snapshot = { url, title, refs: [], mode };
+    const snapshot: Snapshot = { targetId, url, title, refs: [], mode };
     return { snapshot, text: `${title}\n${url}\n${html}` };
   }
 
   // a11y (default)
-  const tree = await ctx.session.send<{ nodes: AXNode[] }>("Accessibility.getFullAXTree", {});
-  const { refs, refMap } = compactAxTree(tree.nodes ?? []);
-
-  // Every ref is addressable by act/fill, including ones this call doesn't render —
-  // an agent that filtered to find ref 640 can still click it.
+  const refs: Snapshot["refs"] = [];
   ctx.lastRefs.clear();
-  for (const [k, v] of refMap) ctx.lastRefs.set(k, v);
+  for (const frame of await frameScopes(ctx.session)) {
+    const tree = await frame.session.send<{ nodes: AXNode[] }>(
+      "Accessibility.getFullAXTree",
+      { frameId: frame.id },
+    );
+    const compact = compactAxTree(tree.nodes ?? []);
+    for (const ref of compact.refs) {
+      const id = refs.length + 1;
+      refs.push({
+        ...ref,
+        ref: id,
+        ...(frame.path ? { frame: frame.path } : {}),
+      });
+      ctx.lastRefs.set(id, { ...compact.refMap.get(ref.ref)!, frame });
+    }
+  }
 
-  const snapshot: Snapshot = { url, title, refs, mode: "a11y" };
+  const snapshot: Snapshot = { targetId, url, title, refs, mode: "a11y" };
 
   // Filter runs over the whole page, then we window. The other order made anything
   // past MAX_REFS unreachable by any filter.
   let matched = refs;
   if (opts.filter) {
     const f = opts.filter.toLowerCase();
-    matched = refs.filter((r) => r.role.toLowerCase().includes(f) || r.name.toLowerCase().includes(f));
+    matched = refs.filter(
+      (r) =>
+        r.role.toLowerCase().includes(f) || r.name.toLowerCase().includes(f),
+    );
   }
 
   const offset = Math.max(0, Math.trunc(opts.offset ?? 0));
   const shown = matched.slice(offset, offset + MAX_REFS);
   const end = offset + shown.length;
 
-  let header = opts.filter ? `${matched.length} of ${refs.length} refs match "${opts.filter}"` : `${refs.length} refs`;
+  let header = opts.filter
+    ? `${matched.length} of ${refs.length} refs match "${opts.filter}"`
+    : `${refs.length} refs`;
   if (offset > 0 || end < matched.length) {
     header += ` — showing ${shown.length ? offset + 1 : 0}-${end}`;
-    if (end < matched.length) header += `; look again with offset=${end} for the next ${MAX_REFS}`;
+    if (end < matched.length)
+      header += `; look again with offset=${end} for the next ${MAX_REFS}`;
   }
 
   let note = "";
@@ -104,11 +161,20 @@ export async function look(ctx: BrowserContext, opts: LookOptions = {}): Promise
     note = `\n(navigation to ${ctx.blockedNav} was blocked: outside the allowed domains ${ctx.allowDomains.join(", ")})`;
     ctx.blockedNav = undefined;
   }
-  return { snapshot, text: `${title}\n${url}\n${header}${note}\n${renderRefs(shown)}` };
+  return {
+    snapshot,
+    text: `${title}\n${url}\n${header}${note}\n${renderRefs(shown)}`,
+  };
 }
 
 function delta(snapshot: Snapshot, summary: string): SnapshotDelta {
-  return { url: snapshot.url, title: snapshot.title, summary, refs: snapshot.refs };
+  return {
+    targetId: snapshot.targetId,
+    url: snapshot.url,
+    title: snapshot.title,
+    summary,
+    refs: snapshot.refs,
+  };
 }
 
 // ── act ─────────────────────────────────────────────────────────────────────
@@ -130,16 +196,16 @@ const KEY_MAP: Record<string, { key: string; code: string; vk: number }> = {
   PageUp: { key: "PageUp", code: "PageUp", vk: 33 },
 };
 
-async function centerOf(ctx: BrowserContext, backendNodeId: number): Promise<{ x: number; y: number }> {
-  const box = await ctx.session.send<BoxModel>("DOM.getBoxModel", { backendNodeId });
-  const q = box.model.content;
-  const x = (q[0]! + q[2]! + q[4]! + q[6]!) / 4;
-  const y = (q[1]! + q[3]! + q[5]! + q[7]!) / 4;
-  return { x, y };
-}
-
-async function clickAt(ctx: BrowserContext, x: number, y: number): Promise<void> {
-  await ctx.session.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+async function clickAt(
+  ctx: BrowserContext,
+  x: number,
+  y: number,
+): Promise<void> {
+  await ctx.session.send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x,
+    y,
+  });
   await ctx.session.send("Input.dispatchMouseEvent", {
     type: "mousePressed",
     x,
@@ -158,19 +224,98 @@ async function clickAt(ctx: BrowserContext, x: number, y: number): Promise<void>
 
 async function pressKey(ctx: BrowserContext, name: string): Promise<void> {
   const k = KEY_MAP[name] ?? { key: name, code: name, vk: 0 };
-  const base = { key: k.key, code: k.code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk };
-  await ctx.session.send("Input.dispatchKeyEvent", { type: "keyDown", ...base });
+  const base = {
+    key: k.key,
+    code: k.code,
+    windowsVirtualKeyCode: k.vk,
+    nativeVirtualKeyCode: k.vk,
+  };
+  await ctx.session.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    ...base,
+  });
   await ctx.session.send("Input.dispatchKeyEvent", { type: "keyUp", ...base });
 }
 
-async function selectValue(ctx: BrowserContext, backendNodeId: number, value: string): Promise<void> {
-  const resolved = await ctx.session.send<{ object: { objectId: string } }>("DOM.resolveNode", { backendNodeId });
-  await ctx.session.send("Runtime.callFunctionOn", {
-    objectId: resolved.object.objectId,
-    functionDeclaration: "function(v){this.value=v;this.dispatchEvent(new Event('change',{bubbles:true}));}",
-    arguments: [{ value }],
-    awaitPromise: true,
+async function pause(ctx: BrowserContext, ms: number): Promise<void> {
+  ctx.signal?.throwIfAborted();
+  await new Promise<void>((resolve, reject) => {
+    const done = () => {
+      ctx.signal?.removeEventListener("abort", abort);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    const abort = () => {
+      clearTimeout(timer);
+      ctx.signal?.removeEventListener("abort", abort);
+      reject(new Error("Action aborted"));
+    };
+    ctx.signal?.addEventListener("abort", abort, { once: true });
   });
+}
+
+async function readyTarget(
+  ctx: BrowserContext,
+  target: NodeTarget,
+  editable = false,
+): Promise<{ x: number; y: number }> {
+  const deadline = Date.now() + ctx.timeoutMs;
+  let previous = "",
+    reason = "not ready";
+  while (Date.now() < deadline) {
+    ctx.signal?.throwIfAborted();
+    try {
+      await scrollTarget(target);
+      const state = await actionable(target, editable);
+      const position = `${state.rect},${state.x},${state.y}`;
+      if (position === previous) return state;
+      previous = position;
+      reason = "moving";
+    } catch (e) {
+      previous = "";
+      reason = (e as Error).message;
+    }
+    await pause(ctx, 50);
+  }
+  throw new Error(
+    `Timed out waiting for ${target.role} "${target.name}": ${reason}`,
+  );
+}
+
+async function replaceText(
+  ctx: BrowserContext,
+  target: NodeTarget,
+  value: string,
+): Promise<void> {
+  await readyTarget(ctx, target, true);
+  await target.frame.session.send("DOM.focus", {
+    backendNodeId: target.backendDOMNodeId,
+  });
+  await ctx.session.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "a",
+    code: "KeyA",
+    windowsVirtualKeyCode: 65,
+    modifiers: process.platform === "darwin" ? 4 : 2,
+    commands: ["selectAll"],
+  });
+  await ctx.session.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "a",
+    code: "KeyA",
+    windowsVirtualKeyCode: 65,
+    modifiers: process.platform === "darwin" ? 4 : 2,
+  });
+  await pressKey(ctx, "Backspace");
+  if (value) await ctx.session.send("Input.insertText", { text: value });
+  const actual = await nodeCall<string>(
+    target,
+    "function(){return this.isContentEditable ? this.innerText : this.value;}",
+  );
+  if (actual !== value)
+    throw new Error(
+      `Fill verification failed for "${target.name}": value was not accepted`,
+    );
 }
 
 /**
@@ -208,71 +353,99 @@ export async function act(
   op: ActOp,
   value?: string,
 ): Promise<{ delta: SnapshotDelta; text: string }> {
-  if (ctx.lastRefs.size === 0) await look(ctx);
+  if (ctx.lastRefs.size === 0)
+    throw new Error("No current refs; call look first");
   const target = ctx.lastRefs.get(ref);
   if (!target) {
-    const snap = await look(ctx);
-    return {
-      delta: delta(snap.snapshot, `ref ${ref} not found; refreshed snapshot`),
-      text: `ref ${ref} not found. Fresh snapshot:\n${snap.text}`,
-    };
+    throw new Error(`ref ${ref} not found; call look to refresh the page`);
   }
   // The commit boundary (#22): a click that looks like submit/send/purchase is withheld
   // under dry-run, or requires explicit approval under --confirm. Everything before it
   // (navigate, read, fill) runs normally.
-  if (isConsequentialClick(op, target.role, target.name) && (ctx.dryRun || ctx.confirmAction)) {
+  if (
+    isConsequentialClick(op, target.role, target.name) &&
+    (ctx.dryRun || ctx.confirmAction)
+  ) {
     const { url, title } = await readUrlTitle(ctx);
-    const pending: PendingAction = { op, ref, role: target.role, name: target.name, value, url, title };
+    const pending: PendingAction = {
+      op,
+      ref,
+      role: target.role,
+      name: target.name,
+      value,
+      url,
+      title,
+    };
     if (ctx.dryRun) {
-      const snap = await look(ctx);
-      const note =
-        `DRY RUN: withheld ${op} on [${ref}] ${target.role} "${target.name}" at ${url} — this is the commit boundary. ` +
-        `Do not attempt it again or look for another way to commit. Summarize exactly what would be submitted (target + field values) and finish.`;
-      return { delta: delta(snap.snapshot, note), text: note };
+      throw new Error(
+        `DRY RUN: withheld ${op} on ${target.role} "${target.name}". Do not retry or seek another way to commit.`,
+      );
     }
     const approved = await ctx.confirmAction!(pending);
     if (!approved) {
-      const snap = await look(ctx);
-      const note =
-        `WITHHELD: ${op} on [${ref}] ${target.role} "${target.name}" was not approved. ` +
-        `Do not retry it or seek another way to commit. Report what is pending and finish.`;
-      return { delta: delta(snap.snapshot, note), text: note };
+      throw new Error(
+        `WITHHELD: ${op} on ${target.role} "${target.name}" was not approved. Do not retry or seek another way to commit.`,
+      );
     }
   }
 
   const backendNodeId = target.backendDOMNodeId;
-  await ctx.session.send("DOM.scrollIntoViewIfNeeded", { backendNodeId }).catch(() => undefined);
-
   switch (op) {
     case "click": {
-      const { x, y } = await centerOf(ctx, backendNodeId);
+      const { x, y } = await readyTarget(ctx, target);
       await clickAt(ctx, x, y);
       break;
     }
     case "type": {
-      await ctx.session.send("DOM.focus", { backendNodeId });
+      await readyTarget(ctx, target, true);
+      await target.frame.session.send("DOM.focus", { backendNodeId });
       await ctx.session.send("Input.insertText", { text: value ?? "" });
       break;
     }
     case "press": {
+      await readyTarget(ctx, target);
+      await target.frame.session.send("DOM.focus", { backendNodeId });
       await pressKey(ctx, value ?? "Enter");
       break;
     }
     case "hover": {
-      const { x, y } = await centerOf(ctx, backendNodeId);
-      await ctx.session.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+      const { x, y } = await readyTarget(ctx, target);
+      await ctx.session.send("Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x,
+        y,
+      });
       break;
     }
     case "select": {
-      await selectValue(ctx, backendNodeId, value ?? "");
+      await readyTarget(ctx, target);
+      await nodeCall(
+        target,
+        `function(v){
+        if(!(this instanceof HTMLSelectElement))throw new Error('Target is not a select element');
+        const option=Array.from(this.options).find(o=>o.value===v);
+        if(!option || option.disabled)throw new Error('Option unavailable');
+        this.value=v;this.dispatchEvent(new Event('input',{bubbles:true}));this.dispatchEvent(new Event('change',{bubbles:true}));
+        if(this.value!==v)throw new Error('Selection was not accepted');
+      }`,
+        [value ?? ""],
+      );
       break;
     }
     case "scroll": {
       const deltaY = value ? Number(value) : 600;
-      const { x, y } = await centerOf(ctx, backendNodeId).catch(() => ({ x: 10, y: 10 }));
-      await ctx.session.send("Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX: 0, deltaY });
+      const { x, y } = await readyTarget(ctx, target);
+      await ctx.session.send("Input.dispatchMouseEvent", {
+        type: "mouseWheel",
+        x,
+        y,
+        deltaX: 0,
+        deltaY,
+      });
       break;
     }
+    default:
+      throw new Error(`Unknown action: ${op}`);
   }
 
   await waitForQuiet(ctx);
@@ -288,20 +461,28 @@ export async function fill(
   ctx: BrowserContext,
   fields: { ref: number; value: string }[],
 ): Promise<{ delta: SnapshotDelta; text: string }> {
-  if (ctx.lastRefs.size === 0) await look(ctx);
+  if (ctx.lastRefs.size === 0)
+    throw new Error("No current refs; call look first");
+  for (const field of fields)
+    if (!ctx.lastRefs.has(field.ref))
+      throw new Error(`ref ${field.ref} not found; no fields were filled`);
   const done: string[] = [];
   for (const field of fields) {
-    const target = ctx.lastRefs.get(field.ref);
-    if (!target) {
-      done.push(`[${field.ref}] not found`);
-      continue;
-    }
-    await ctx.session.send("DOM.scrollIntoViewIfNeeded", { backendNodeId: target.backendDOMNodeId }).catch(() => undefined);
-    await ctx.session.send("DOM.focus", { backendNodeId: target.backendDOMNodeId });
-    await ctx.session.send("Input.insertText", { text: field.value });
+    const target = ctx.lastRefs.get(field.ref)!;
+    await replaceText(ctx, target, field.value);
     done.push(`[${field.ref}] "${field.value}"`);
   }
   await waitForQuiet(ctx);
+  for (const field of fields) {
+    const actual = await nodeCall<string>(
+      ctx.lastRefs.get(field.ref)!,
+      "function(){return this.isContentEditable ? this.innerText : this.value;}",
+    );
+    if (actual !== field.value)
+      throw new Error(
+        `Fill verification failed for ref ${field.ref}: value changed after input`,
+      );
+  }
   const fresh = await look(ctx);
   const note = `filled ${done.length} field(s): ${done.join(", ")}`;
   return { delta: delta(fresh.snapshot, note), text: `${note}\n${fresh.text}` };
@@ -309,7 +490,14 @@ export async function fill(
 
 // ── nav ───────────────────────────────────────────────────────────────────────
 
-export type NavAction = "goto" | "back" | "forward" | "reload" | "waitfor" | "newtab" | "switchtab";
+export type NavAction =
+  | "goto"
+  | "back"
+  | "forward"
+  | "reload"
+  | "waitfor"
+  | "newtab"
+  | "switchtab";
 
 interface NavHistory {
   currentIndex: number;
@@ -320,115 +508,151 @@ export async function nav(
   ctx: BrowserContext,
   action: NavAction,
   arg?: string,
-): Promise<{ result: SnapshotDelta | Snapshot; text: string; error?: boolean }> {
+): Promise<{
+  result: SnapshotDelta | Snapshot;
+  text: string;
+  error?: boolean;
+}> {
   // The navigation fence (#23): goto/newtab outside the allowlist are refused at the
   // tool layer, so staying on target is an invariant rather than a prompt-hope.
-  if ((action === "goto" || action === "newtab") && arg && !hostAllowed(arg, ctx.allowDomains)) {
+  if (
+    (action === "goto" || action === "newtab") &&
+    arg &&
+    !hostAllowed(arg, ctx.allowDomains)
+  ) {
     return {
-      result: { url: "", title: "", summary: `blocked navigation to ${arg}`, refs: [] },
+      result: {
+        url: "",
+        title: "",
+        summary: `blocked navigation to ${arg}`,
+        refs: [],
+      },
       text:
         `domain_not_allowed: ${arg} is outside the allowed domains (${ctx.allowDomains.join(", ")}). ` +
         `Navigation is restricted; if the task cannot proceed within these domains, stop and report BLOCKED.`,
       error: true,
     };
   }
-  switch (action) {
-    case "goto": {
-      const loaded = ctx.session.once("Page.loadEventFired", { timeoutMs: 15000 }).catch(() => undefined);
-      await ctx.session.send("Page.navigate", { url: arg ?? "about:blank" });
-      await loaded;
-      ctx.evalCtx.isolatedContextId = undefined;
-      const { url } = await readUrlTitle(ctx);
-      const applied = await applySkills(ctx.session, ctx.store, url);
-      const snap = await look(ctx);
-      const skillNote = applied.length ? `\n(applied skills: ${applied.join(", ")})` : "";
-      return { result: snap.snapshot, text: `navigated to ${arg}${skillNote}\n${snap.text}` };
-    }
-    case "back":
-    case "forward": {
-      const hist = await ctx.session.send<NavHistory>("Page.getNavigationHistory", {});
-      const idx = action === "back" ? hist.currentIndex - 1 : hist.currentIndex + 1;
-      const entry = hist.entries[idx];
-      if (!entry) return { result: (await look(ctx)).snapshot, text: `cannot go ${action}: no entry` };
-      const loaded = ctx.session.once("Page.loadEventFired", { timeoutMs: 15000 }).catch(() => undefined);
-      await ctx.session.send("Page.navigateToHistoryEntry", { entryId: entry.id });
-      await loaded;
-      ctx.evalCtx.isolatedContextId = undefined;
-      const snap = await look(ctx);
-      return { result: snap.snapshot, text: `went ${action}\n${snap.text}` };
-    }
-    case "reload": {
-      const loaded = ctx.session.once("Page.loadEventFired", { timeoutMs: 15000 }).catch(() => undefined);
-      await ctx.session.send("Page.reload", {});
-      await loaded;
-      ctx.evalCtx.isolatedContextId = undefined;
-      const snap = await look(ctx);
-      return { result: snap.snapshot, text: `reloaded\n${snap.text}` };
-    }
-    case "waitfor": {
-      const needle = arg ?? "";
-      const deadline = Date.now() + 15000;
-      let found = false;
-      while (Date.now() < deadline) {
-        const r = await runEval(
-          ctx.evalCtx,
-          "function(sel){try{if(document.querySelector(sel))return true;}catch(e){}return (document.body?document.body.innerText:'').includes(sel);}",
-          [needle],
-          { world: "main" },
-        );
-        if ("value" in r && r.value === true) {
-          found = true;
-          break;
-        }
-        await new Promise((res) => setTimeout(res, 250));
-      }
-      const snap = await look(ctx);
-      return {
-        result: delta(snap.snapshot, found ? `found "${needle}"` : `timed out waiting for "${needle}"`),
-        text: `${found ? "found" : "timed out waiting for"} "${needle}"\n${snap.text}`,
-      };
-    }
-    case "newtab": {
-      const created = await ctx.session.send<{ targetId: string }>("Target.createTarget", {
-        url: arg ?? "about:blank",
+  let committed = false;
+  const offFrame = ctx.session.on("Page.frameNavigated", (p) => {
+    if (!(p as { frame?: { parentId?: string } }).frame?.parentId)
+      committed = true;
+  });
+  const offWithin = ctx.session.on("Page.navigatedWithinDocument", () => {
+    committed = true;
+  });
+  const waitLoaded = async () => {
+    const deadline = Date.now() + ctx.timeoutMs;
+    while (Date.now() < deadline) {
+      const r = await runEval(ctx.evalCtx, "() => document.readyState", [], {
+        world: "main",
       });
-      const snap = await look(ctx);
-      return {
-        result: delta(snap.snapshot, `created tab ${created.targetId} (this session stays on the original tab)`),
-        text: `created new tab ${created.targetId}. Note: this session remains attached to the original tab; reconnect to drive the new one.`,
-      };
+      if (committed && "value" in r && r.value === "complete") return;
+      await pause(ctx, 50);
     }
-    case "switchtab": {
-      // An empty or unknown targetId can never succeed — fail fast with the open tabs
-      // instead of throwing into the retry path (#25).
-      const listTabs = async (): Promise<string> => {
-        const t = await ctx.session
-          .send<{ targetInfos: { targetId: string; type: string; url: string }[] }>("Target.getTargets", {})
-          .catch(() => ({ targetInfos: [] }));
-        const pages = t.targetInfos.filter((i) => i.type === "page");
-        return pages.map((p) => `  ${p.targetId}  ${p.url}`).join("\n") || "  (none)";
-      };
-      if (!arg || !arg.trim()) {
+    throw new Error("Timed out waiting for navigation to complete");
+  };
+  try {
+    switch (action) {
+      case "goto": {
+        ctx.lastRefs.clear();
+        const response = await ctx.session.send<{ errorText?: string }>(
+          "Page.navigate",
+          { url: arg ?? "about:blank" },
+        );
+        if (response.errorText)
+          throw new Error(`Navigation failed: ${response.errorText}`);
+        ctx.evalCtx.isolatedContextId = undefined;
+        await waitLoaded();
+        const { url } = await readUrlTitle(ctx);
+        await applySkills(ctx.session, ctx.store, url);
+        break;
+      }
+      case "back":
+      case "forward": {
+        const hist = await ctx.session.send<NavHistory>(
+          "Page.getNavigationHistory",
+          {},
+        );
+        const entry =
+          hist.entries[hist.currentIndex + (action === "back" ? -1 : 1)];
+        if (!entry) throw new Error(`Cannot go ${action}: no history entry`);
+        if (!hostAllowed(entry.url, ctx.allowDomains))
+          throw new Error("History destination outside allowed domains");
+        await ctx.session.send("Page.navigateToHistoryEntry", {
+          entryId: entry.id,
+        });
+        await waitLoaded();
+        break;
+      }
+      case "reload":
+        await ctx.session.send("Page.reload", {});
+        await waitLoaded();
+        break;
+      case "waitfor": {
+        if (!arg) throw new Error("waitfor requires a selector or text");
+        const deadline = Date.now() + ctx.timeoutMs;
+        let found = false;
+        while (Date.now() < deadline) {
+          const r = await runEval(
+            ctx.evalCtx,
+            "function(sel){try{if(document.querySelector(sel))return true;}catch(e){}return (document.body?.innerText??'').includes(sel);}",
+            [arg],
+            { world: "main" },
+          );
+          if ("value" in r && r.value === true) {
+            found = true;
+            break;
+          }
+          await pause(ctx, 50);
+        }
+        if (!found) throw new Error(`Timed out waiting for "${arg}"`);
+        break;
+      }
+      case "newtab": {
+        if (!ctx.session.selectTarget)
+          throw new Error(
+            "Tab switching requires a browser-level CDP connection",
+          );
+        const created = await ctx.session.send<{ targetId: string }>(
+          "Target.createTarget",
+          { url: "about:blank" },
+        );
+        await ctx.session.selectTarget(created.targetId);
+        const fresh = await nav(ctx, "goto", arg ?? "about:blank");
         return {
-          result: { url: "", title: "", summary: "switchtab needs a targetId", refs: [] },
-          text: `switchtab requires a tab targetId (newtab returns one). Open tabs:\n${await listTabs()}`,
-          error: true,
+          ...fresh,
+          text: `created new tab ${created.targetId}\n${fresh.text}`,
         };
       }
-      try {
-        await ctx.session.send("Target.activateTarget", { targetId: arg });
-      } catch {
-        return {
-          result: { url: "", title: "", summary: `no tab with id ${arg}`, refs: [] },
-          text: `no tab with id "${arg}". Open tabs:\n${await listTabs()}`,
-          error: true,
-        };
+      case "switchtab": {
+        if (!arg) throw new Error("switchtab requires a targetId");
+        if (!ctx.session.selectTarget)
+          throw new Error(
+            "Tab switching requires a browser-level CDP connection",
+          );
+        const targets = await ctx.session.send<{
+          targetInfos: { targetId: string; url: string; type: string }[];
+        }>("Target.getTargets", {});
+        const target = targets.targetInfos.find(
+          (t) => t.targetId === arg && t.type === "page",
+        );
+        if (!target) throw new Error(`No tab with id "${arg}"`);
+        if (!hostAllowed(target.url, ctx.allowDomains))
+          throw new Error("Tab outside allowed domains");
+        await ctx.session.selectTarget(arg);
+        break;
       }
-      const snap = await look(ctx);
-      return {
-        result: delta(snap.snapshot, `activated tab ${arg} (session still drives the original tab)`),
-        text: `activated tab ${arg}. Note: single-client session still drives the original tab.`,
-      };
+      default:
+        throw new Error(`Unknown navigation action: ${action}`);
     }
+    const snap = await look(ctx);
+    return {
+      result: snap.snapshot,
+      text: `${action}${arg ? ` ${arg}` : ""}\n${snap.text}`,
+    };
+  } finally {
+    offFrame();
+    offWithin();
   }
 }

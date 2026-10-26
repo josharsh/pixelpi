@@ -1,0 +1,77 @@
+{
+  "recordedAt": "2026-10-26T07:20:36.256Z",
+  "suite": "local-hand-authored-replay-diagnostic",
+  "rows": [
+    {
+      "id": "fresh-extraction",
+      "expectation": "Fresh output matches independently known fixture heading",
+      "passed": true,
+      "ms": 567.181125,
+      "modelCalls": 0,
+      "result": {
+        "ok": true,
+        "steps": [
+          {
+            "i": 0,
+            "tool": "nav",
+            "label": "nav goto http://127.0.0.1:57780/",
+            "status": "ok"
+          },
+          {
+            "i": 1,
+            "tool": "eval",
+            "label": "eval",
+            "status": "ok"
+          }
+        ],
+        "finalText": "Old value from recording",
+        "output": "Current value"
+      }
+    },
+    {
+      "id": "missing-selector",
+      "expectation": "Replay reports failure when the extraction tool errors",
+      "passed": false,
+      "ms": 371.7792079999999,
+      "modelCalls": 0,
+      "result": {
+        "ok": true,
+        "steps": [
+          {
+            "i": 0,
+            "tool": "nav",
+            "label": "nav goto http://127.0.0.1:57780/",
+            "status": "ok"
+          },
+          {
+            "i": 1,
+            "tool": "eval",
+            "label": "eval",
+            "status": "ok"
+          }
+        ],
+        "finalText": "Old value from recording",
+        "output": "Error: Required heading missing\n    at <anonymous>:1:86"
+      }
+    },
+    {
+      "id": "nav-only-freshness",
+      "expectation": "A retrieval result must contain fresh data, not recorded finalText; nav-only traces cannot satisfy this",
+      "passed": false,
+      "ms": 397.3721250000001,
+      "modelCalls": 0,
+      "result": {
+        "ok": true,
+        "steps": [
+          {
+            "i": 0,
+            "tool": "nav",
+            "label": "nav goto http://127.0.0.1:57780/",
+            "status": "ok"
+          }
+        ],
+        "finalText": "Old value from recording"
+      }
+    }
+  ]
+}
