@@ -1,0 +1,174 @@
+{
+  "startedAt": "2026-10-26T12:47:09.449Z",
+  "repeats": 5,
+  "tasks": [
+    {
+      "id": "extract",
+      "group": "core",
+      "description": "Read the current invoice reference",
+      "expected": "INV-2048"
+    },
+    {
+      "id": "search",
+      "group": "core",
+      "description": "Search for copper, then open its details",
+      "expected": {
+        "item": "copper"
+      }
+    },
+    {
+      "id": "form",
+      "group": "core",
+      "description": "Fill and save a blank contact form",
+      "expected": {
+        "name": "Ada Lovelace",
+        "email": "ada@example.test",
+        "city": "London"
+      }
+    },
+    {
+      "id": "select",
+      "group": "core",
+      "description": "Choose the Pro plan and save",
+      "expected": {
+        "plan": "pro"
+      }
+    },
+    {
+      "id": "checkbox",
+      "group": "core",
+      "description": "Enable email updates and save",
+      "expected": {
+        "updates": true
+      }
+    },
+    {
+      "id": "long-page",
+      "group": "core",
+      "description": "Open Record 240 on a page with 240 buttons",
+      "expected": {
+        "record": 240
+      }
+    },
+    {
+      "id": "prefilled",
+      "group": "stress",
+      "description": "Replace existing values in a contact form",
+      "expected": {
+        "name": "Ada Lovelace",
+        "email": "ada@example.test",
+        "city": "London"
+      }
+    },
+    {
+      "id": "delayed",
+      "group": "stress",
+      "description": "Prepare, then click Launch as it becomes enabled after 900ms",
+      "expected": {
+        "launched": true
+      }
+    },
+    {
+      "id": "shadow",
+      "group": "stress",
+      "description": "Activate a button inside an open shadow root",
+      "expected": {
+        "shadow": true
+      }
+    },
+    {
+      "id": "iframe",
+      "group": "stress",
+      "description": "Activate a button inside a same-origin iframe",
+      "expected": {
+        "frame": true
+      }
+    }
+  ],
+  "pixelpiCommit": "638067c01bba95a1b59d28cc96f229d2e6fa16f1",
+  "pixelpiVersion": "0.6.1",
+  "playwrightMcpVersion": "0.0.83",
+  "playwrightVersion": "1.64.0-alpha-1790635538000",
+  "environment": {
+    "node": "v20.17.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M3 Pro"
+  },
+  "sourceHashes": {
+    "bench/comparison/run.ts": "bd1610fc65a6605db470a2f7c4ae8881d48bf07a0a857e370b83099b82d3158d",
+    "bench/comparison/fixture.ts": "c65834baad0a8d9f13772150eb8bf9d215e1f97f21c54fbce8e181270945746e",
+    "bench/comparison/refs.ts": "9ea0d0ffb7bc7cf0d4d2474964ee16e0f0c56d9457a979ff0499690c2af200eb",
+    "bench/mcp-client.ts": "532714a144f7079b11b80983298df5d76765aa9fd990f2e46a79d25f05092db3",
+    "pnpm-lock.yaml": "6875bef072e0c447fc5c7bb30cca55e404f171d9291fd3bdd228ec5cdf3d9761",
+    "packages/agent/src/cli.test.ts": "37f16f8a4b76cc78c21ac77fdcd0467c3fd3d53f05d61cd6a6415528331e7c4e",
+    "packages/agent/src/cli.ts": "9ba441e2189597b0c502479583311a6826c62eee4358c199ab3a1c6aa752ad37",
+    "packages/agent/src/config.test.ts": "3a6500d4fd97bd28a418fac330aaf1e3db7f17f56e811c917e27682502367765",
+    "packages/agent/src/config.ts": "931867bee32d13170a9fd48b20cd7fdc9a30bbd986f04601e7875867f4d1650e",
+    "packages/agent/src/dashboard.test.ts": "305a614490474af1463e9985d9981b170d1e26c93dccf802dca96f7fc8a5dc02",
+    "packages/agent/src/dashboard.ts": "fe3a2aecd8ab6eeef2b3f7bc128c31b3a2a7c9277d234afd89a4b68a9920704b",
+    "packages/agent/src/index.ts": "8f47b47dbd8ba6388f8461d935b0fd749727fa426af93f81fea3dc4d9feadce7",
+    "packages/agent/src/markdown.test.ts": "bd8503ba0d8042b766830a0304894fd4b7d08330b9f81f4871ebf2dc83576e4c",
+    "packages/agent/src/markdown.ts": "2e15f32a79ef735dc221757f74621ae870f6864bc611835caab4bad15cc68495",
+    "packages/agent/src/match.test.ts": "b2ad6a60e2aec999cb21b27495c335200946d58ae5ae431993ed71ee75175704",
+    "packages/agent/src/match.ts": "87deca314f9dd6626ca0fc9bc43f14c2437367fd4533269980c7a13d1b6327ee",
+    "packages/agent/src/mcp.test.ts": "a18cb066901992e3a36bc48e937ebc819a398922c9da3e0873442cdc2dfe6b8a",
+    "packages/agent/src/mcp.ts": "639255892aa326364bfadb5e168a66acc333f23f7e20b8e411746a1a1825d221",
+    "packages/agent/src/onboarding.ts": "a6081dbda4e6929e4eaa2aceda85e26a4494a513fdf93d501c07e9af7d8124d8",
+    "packages/agent/src/prompt.test.ts": "f84944cf9f2cfeb3739e01581c43be8bad3898cd3c401b6c8772523c505e9e12",
+    "packages/agent/src/prompt.ts": "ca10d88c43e89f4d4cea87837bed6faa0370b0f9ab5c1659e591def2a393bcdf",
+    "packages/agent/src/record.test.ts": "f7ea583b8b5257a35d72de7a747da4b3870c606b69268a8e4c33c300139ec12d",
+    "packages/agent/src/record.ts": "dd6e0e4f6c7e92f29709c1a193489b3247178f6b8fb97d352117d1da57376acc",
+    "packages/agent/src/render.ts": "0f93e04592943c6308afeeb19dcf237a6bc55b0add1c7bd0c095f00adf58aba6",
+    "packages/agent/src/repl.ts": "406ab4300e07bc298929f26bb35e926f41636ef6255560065c1ac561c902a1f8",
+    "packages/agent/src/replay.test.ts": "a6b08ca41d05aee2cbcaf7b9b640869c77877cdf5ecc1a2084e858cd040761fd",
+    "packages/agent/src/replay.ts": "43c0a9e7523f36f9fe466d24547cb1ec2d1e45310b60783db2e33be7f51a00d6",
+    "packages/agent/src/run.test.ts": "126ee0c2fe62c34b9f5649e8cb2c440e8cf48e556cc5ee68890c8781602c5097",
+    "packages/agent/src/run.ts": "01d50be14a652091898fc63b14163c5cccc5ed9e7b3d5b150b692c6727b48553",
+    "packages/agent/src/sdk.test.ts": "6dce685d1fa0291e7dd20189630348db9de52393819e7a81462e660ae07cfc6b",
+    "packages/agent/src/sdk.ts": "39731a4d10606e93d30a4b15fcb1dc2414e660ef8e3143097d6df1c98feef103",
+    "packages/agent/src/session.ts": "2ddd7ffd77c3034efb152b8e627345e1f234026f9a70f19eb45bb9be56d070bf",
+    "packages/agent/src/template.test.ts": "537500f1f0c6ff1e831b7b73fe338d0417370909211bf36ee34eaf13230e54a3",
+    "packages/agent/src/template.ts": "d043b16e001ace976bad8bda046c6b6c754b47d38a6829ceeef2ed310c346a4a",
+    "packages/agent/src/trace.test.ts": "2a46eaf9a3d00266bb64176979aa8b2e9b2979ddaa985e94fd26b47494fbffe0",
+    "packages/agent/src/trace.ts": "3f07c0a94b0de95d85e7b28ddf9a50d815fb197379d4dee5bf88efdcb64a2d8b",
+    "packages/agent/src/types.ts": "16ddbcce9dd85346f6585df3977a13019e692d6bf8b344e41d5653c610e5d9d9",
+    "packages/agent/tsup.config.ts": "2401759f1ad423f51eba4d61be6e53acc9e4ba2389514992e8f7694bbce5f87a",
+    "packages/ai/src/anthropic.test.ts": "7f02663f29b738ff9a2e08eacb194f17a8eb8272abb695da041ecba4eed18c5a",
+    "packages/ai/src/anthropic.ts": "b89d194b7114d97270b9703cc89a64adc10a709bf9d86ad8994404492c0af609",
+    "packages/ai/src/errors.test.ts": "3b9a86c285c346ba2a0cab39a8e852052281d791cf82b0f01d1fb2ace4768ec0",
+    "packages/ai/src/errors.ts": "cb8a4fbec08c52001f5599f8dc85561c5f1fd28496bd5c4f41abf7f8b8af9215",
+    "packages/ai/src/index.ts": "86224a8aa3491d15eb73cef8aa75b06a5fd7af59b2717c0915af714947232ac6",
+    "packages/ai/src/openai.test.ts": "19ed6ae0fba54193f855f3c0037a298dc40141f05a75e3e775f76f6dfa2bf089",
+    "packages/ai/src/openai.ts": "e89696e3f16d885ce78e71178556e0feb92b0afd25efa76d0e6c09977adb11b6",
+    "packages/ai/src/types.ts": "8d43dac41996dcbff007b5b0ddb952078e525705d6f5d55e395ebc5d047de43c",
+    "packages/cdp/src/actions.ts": "cca60314370558669277c46d1b8670d45746fdc87c7bfb804b959a786d29cb86",
+    "packages/cdp/src/browser-session.ts": "f30b76a788db55d0cb3ce373590ff0767f8b0afab3cc605d3cb5a28958bcafba",
+    "packages/cdp/src/client.test.ts": "60e22f3f016e71fc9c4919cf97323f649e7c07ffdc8cb54e69c257b852f088ad",
+    "packages/cdp/src/client.ts": "293720b1283ef78db2b1e7c3b843d9f2254cf5bfb32be54cfa8084677693925a",
+    "packages/cdp/src/evaltool.test.ts": "4d9312912e769fe14c112daa60adf5aba9d1cdf52cc4193573ea8892a25a0a31",
+    "packages/cdp/src/evaltool.ts": "81c7da0ad9981c241a8b8970a589338365c22be311e0f4621caf520e10bbce04",
+    "packages/cdp/src/frames.ts": "212109ce0adee7e9cead7a4d8fea53b0f1b6f92ee17994fc178b2fcec7fba4fb",
+    "packages/cdp/src/guardrails.test.ts": "678a5b84aaaf932b463bb1e23f656060de50290b7990ae2759b35a7f851fd86f",
+    "packages/cdp/src/guardrails.ts": "ee3167a38c56da0ef717714646ba5005e496dd58f47e7c56ec6ac51cf17962ab",
+    "packages/cdp/src/index.ts": "309411231271f3840af9365c65ad11b4cc5437108d203911ebdd0cb442b5bf98",
+    "packages/cdp/src/launch.test.ts": "eee344fc1dbc293bb99705d99d00a710af57f9ac893606f1275d8ca8c6a7ded7",
+    "packages/cdp/src/launch.ts": "755a6dca4d00d8cc608c118b9127fda6a8c886b3b0d5ba2ba183fa186a530cca",
+    "packages/cdp/src/skills.test.ts": "a0f85635ae8ad62ddde27ff3ab03e8e93786e2ebac1c513f2f5c4f5e4813e63a",
+    "packages/cdp/src/skills.ts": "8565e2363f5207e84903679bf044825ca0da597bc5a45e3979cc361d61583614",
+    "packages/cdp/src/snapshot.test.ts": "b115bced119895a8ab73f9e98cc3d35de1625ee6afd37f1988f6da0bf2302410",
+    "packages/cdp/src/snapshot.ts": "e3fb193157241941558aa8f32c0a850ed5e14e14a670955330f7c33e825983fd",
+    "packages/cdp/src/tools.ts": "f602a14028a23fefd28cf59d866b324b086b0ed7545042589b37657b14d710e6",
+    "packages/cdp/src/types.ts": "acc2a42017e16f64ea06bd227c37582ccc5b4966304f3c126ae09debfb59c110",
+    "packages/core/src/agent.test.ts": "c824ef85f91923fe0284dbfae2c77e5cf2b327e744dd53e7077b37696049805e",
+    "packages/core/src/agent.ts": "a85dc277751b49c7d4121f206dfc6405800f16a3593facd7a5b8be0258fbaa26",
+    "packages/core/src/guard.test.ts": "59b7354f9ca8fd5035c3c267dfb25ad6510cb33c1dfa856cf3050a9e0a888922",
+    "packages/core/src/guard.ts": "5d5fa77abecb5f8ab70c05a3b9f27d7ae414d69acfefcf9870c53b0789027903",
+    "packages/core/src/index.ts": "eeb247535ef05c79b94ca534f123c5d88559d7f8a406d157b75c9050a93e07e6",
+    "packages/core/src/stableStringify.ts": "1e68f41dae7fe5de1045a8b83a6510291aa9c794a8a5e6a8d07585d1b3dac968",
+    "packages/core/src/store.test.ts": "3e68de087d45bfa85347bf62e97f5fb81fdddb615b7b80106596a6f6555c8124",
+    "packages/core/src/store.ts": "25a15edcc4dfffe94e93e4c3ebdb38e327d7bfee5cf4ff771af9a2da2a1a5378",
+    "packages/core/src/types.ts": "ec9ee5e64ea8f9cd83cebcfbac298161bedab33e65e74b16eaa91503c40c0951"
+  },
+  "protocol": "Ten fixed synthetic tasks; fresh process/browser per trial; local fixture reset via unique run ID; defaults for action wait/settle; warmup and boot separate from task timing; rotating system order; 5 repetitions; independent server-side exact event oracle; no LLM or retries; no adaptive repair; production source state identified by manifest hashes."
+}

@@ -35,7 +35,9 @@ const cases: { id: string; trace: Trace; check: (r: ReplayResult) => boolean; ex
   { id: "missing-selector", trace: trace('const el = document.querySelector("#removed"); if (!el) throw new Error("Required heading missing"); return el.textContent;'),
     check: (r) => !r.ok, expectation: "Replay reports failure when the extraction tool errors" },
   { id: "nav-only-freshness", trace: trace(),
-    check: (r) => r.output === "Current value", expectation: "A retrieval result must contain fresh data, not recorded finalText; nav-only traces cannot satisfy this" },
+    check: (r) => r.output === undefined && r.finalText === undefined && r.recordedFinalText === "Old value from recording" && r.verified === false, expectation: "Navigation-only execution must not present recorded prose as fresh extraction or a verified outcome" },
+  { id: "required-output", trace: {...trace(), output:{from:"none",required:true}},
+    check: (r) => !r.ok, expectation: "Missing explicitly required output must fail" },
 ];
 const rows = [];
 try {

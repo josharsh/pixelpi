@@ -108,6 +108,8 @@ Mean **3.33×**, measured 2026-08-11 with `o200k_base` against `@playwright/mcp@
 
 That pixelpi column is deliberately unflattering: it charges for the *entire* page, paging included. In practice one `look()` renders the first 200 refs and that's all most steps ever need — on Hacker News that's 2,652 tokens against 12,452. I report the worse number because it's the honest one. [Full method →](bench/)
 
+The October 26 functional comparison also grades exact outcomes against Playwright MCP and direct Playwright scripts. See the [technical report](bench/PLAYWRIGHT_COMPARISON.md) for the original failures, fixes, and separate rerun artifacts.
+
 ## Why it's different
 
 | | pixelpi | Playwright MCP | Chrome DevTools MCP |
@@ -128,6 +130,14 @@ To be clear about what this table is and isn't: the advantage is context, not ca
 
 Giving your own agent a browser that doesn't eat its context window — especially an agent already weighed down by other MCP servers. Then, once a task works: bulk form submissions, scraping at scale, price and stock and account checks across a list, nightly portal exports. All of it replayed from a trace, with no model in the loop.
 
+## Browser regression checks
+
+`look` includes ordinary, nested, and cross-origin iframe elements. Actions wait for visible, enabled, stable targets and check whether the target receives pointer events. `newtab` selects the new tab; `switchtab` changes the session used by subsequent tools. MCP screenshot responses include PNG image blocks.
+
+Missing targets, rejected input values, navigation failures, and expired waits return tool errors. MCP cancellation interrupts active work and cancels queued requests. The SDK's browser tools accept `timeoutMs` for action readiness (default 5 seconds) and `operationTimeoutMs` for a complete tool operation (default 30 seconds).
+
+Run `pnpm build && pnpm test:browser` with Google Chrome installed. The tests use local fixtures and need no model API key. CI also runs `pnpm bench:compare --repeats 1 --out /tmp/pixelpi-comparison --require-all-pass` against independent server-side outcome checks.
+
 ## Record, replay, and run over data
 
 Solve it once with the model, save the trace, then never pay for that thinking again. The first run is the compiler. Every run after it is the binary.
@@ -138,7 +148,23 @@ pixelpi replay hn-top                                         # rerun it, no mod
 pixelpi replay hn-top --heal                                  # repair one step if the page drifted
 ```
 
-Traces key on each element's accessibility role and name, never CSS selectors or coordinates, which is why they survive most redesigns. A bare name lands in `~/.pixelpi/traces/`; pass a path (or a name ending in `.json`) to keep the trace in a repo next to the code that uses it. Strict `replay` needs no API key and exits `3` on drift, naming the step that stopped matching. `--heal` re-derives just that one step and rewrites the trace, so it corrects itself over time. Worth being clear-eyed here: replay reproduces actions, not intent. It shines on stable, repeated flows and nowhere else.
+Traces key on each element's accessibility role and name, never CSS selectors or coordinates, which is why they survive most redesigns. A bare name lands in `~/.pixelpi/traces/`; pass a path (or a name ending in `.json`) to keep the trace in a repo next to the code that uses it. Strict `replay` needs no API key and exits `3` on drift, naming the step that stopped matching. Tool execution and verification errors exit `1` and stop the replay. `--heal` re-derives just that one step and rewrites the trace, so it corrects itself over time. Worth being clear-eyed here: replay reproduces actions, not intent. It shines on stable, repeated flows and nowhere else.
+
+Replay distinguishes execution from verified outcomes. `ok: true` means the recorded steps and declared checks completed. `verified: true` additionally requires at least one passing assertion. Add checks to a trace when completion must be established from page state:
+
+```json
+"assertions": [
+  {
+    "name": "saved confirmation",
+    "fn": "() => document.querySelector('[data-status]')?.textContent",
+    "equals": "Saved"
+  }
+]
+```
+
+Assertions compare fresh evaluated values with `equals`. An output specification can set `required: true` to reject a missing result. SDK replay returns the fresh designated output; saved prose is retained only as `recordedFinalText` in the lower-level replay result. Tool errors never count as successful steps or trigger drift repair. Repaired traces are persisted after the full replay and its checks succeed.
+
+
 
 A parametrized trace is a function. Record it once with an example input, then map it over a list:
 
@@ -200,12 +226,12 @@ look · act · fill · nav · eval · store
 
 - **`look(mode?, filter?, offset?)`** — a compact, ref-indexed accessibility snapshot. The `read`. Renders 200 refs at a time; `filter` searches the whole page and `offset` walks through it, so nothing on a big page is out of reach.
 - **`act(ref, op, value?)`** — mutate the page by stable ref, through trusted CDP input events. The `write`.
-- **`fill(fields[])`** — a whole form in one call.
+- **`fill(fields[])`** — replace existing field values, including clearing a field with an empty string, and verify the accepted values.
 - **`nav(action, arg?)`** — navigation, tabs, `waitfor`.
 - **`eval(fn, args?, opts?)`** — arbitrary JS in the page realm. The escape hatch; the `bash` of the browser.
 - **`store(action, key?, value?)`** — durable host-side JSON KV. The filesystem.
 
-Elements are addressed by **stable ref** rather than CSS or coordinates: cheap, deterministic, and largely indifferent to layout churn. Everything else composes out of `eval` — the agent builds its own higher-level tools as JSON skills while it works, and the prompt only ever sees the one-line description of each.
+Elements are addressed by **refs from the latest snapshot** rather than CSS or coordinates: cheap, deterministic, and largely indifferent to layout churn. Everything else composes out of `eval` — the agent builds its own higher-level tools as JSON skills while it works, and the prompt only ever sees the one-line description of each.
 
 ## Use it from code
 

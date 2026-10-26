@@ -1,5 +1,8 @@
 # PixelPi / Pomerado benchmark investigation — 2026-10-26
 
+> Historical baseline: this report describes the original implementation and the public vendor evidence. The observed replay error and browser failures have since been addressed on the fix branch. See the [updated Playwright comparison](PLAYWRIGHT_COMPARISON.md) for the rerun. Pomerado's exact task pack remains unavailable, so these fixes do not establish a score against Pomerado.
+
+
 **Verdict: PixelPi's context efficiency is measurable; its enterprise task performance versus Pomerado is unknown. A real replay error-reporting bug was reproduced.**
 
 The exact requested comparison could not be run. Pomerado publishes aggregate scores, but I did not find its 30 task prompts, graders, seeded environments, credentials, or per-task logs in the public website, launch post, docs index, or public repositories. The user confirmed there is no separate benchmark pack available and requested continuing with tests that need no API key. No substitute test below is presented as the same benchmark.

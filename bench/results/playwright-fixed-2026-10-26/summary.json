@@ -1,0 +1,418 @@
+{
+  "total_trials": 150,
+  "repeats": 5,
+  "tasks": {
+    "extract": {
+      "pixelpi": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 18.716667000000598,
+        "min_ms": 15.722749999986263,
+        "max_ms": 21.591042000000016,
+        "median_output_tokens": 80,
+        "median_argument_tokens": 59,
+        "median_tool_calls": 2,
+        "silent_failures": 0
+      },
+      "playwright-mcp": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 556.2792090000003,
+        "min_ms": 553.1917499999981,
+        "max_ms": 559.4337500000001,
+        "median_output_tokens": 241,
+        "median_argument_tokens": 70,
+        "median_tool_calls": 3,
+        "silent_failures": 0
+      },
+      "playwright-script": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 20.067624999996042,
+        "min_ms": 19.67041600000084,
+        "max_ms": 22.55525000000489,
+        "median_output_tokens": 0,
+        "median_argument_tokens": 0,
+        "median_tool_calls": 0,
+        "silent_failures": 0
+      }
+    },
+    "search": {
+      "pixelpi": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 1012.1967499999737,
+        "min_ms": 1000.9629160000004,
+        "max_ms": 1019.2734170000185,
+        "median_output_tokens": 343,
+        "median_argument_tokens": 86,
+        "median_tool_calls": 4,
+        "silent_failures": 0
+      },
+      "playwright-mcp": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 1679.1076250000042,
+        "min_ms": 1663.108957999997,
+        "max_ms": 1682.9831660000054,
+        "median_output_tokens": 691,
+        "median_argument_tokens": 139,
+        "median_tool_calls": 7,
+        "silent_failures": 0
+      },
+      "playwright-script": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 100.15037499999744,
+        "min_ms": 98.98729200000525,
+        "max_ms": 124.99066699999912,
+        "median_output_tokens": 0,
+        "median_argument_tokens": 0,
+        "median_tool_calls": 0,
+        "silent_failures": 0
+      }
+    },
+    "form": {
+      "pixelpi": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 809.0408329999991,
+        "min_ms": 799.0400000000081,
+        "max_ms": 816.3262919999997,
+        "median_output_tokens": 418,
+        "median_argument_tokens": 91,
+        "median_tool_calls": 3,
+        "silent_failures": 0
+      },
+      "playwright-mcp": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 1139.3103330000013,
+        "min_ms": 1123.8228750000126,
+        "max_ms": 1145.8052080000052,
+        "median_output_tokens": 640,
+        "median_argument_tokens": 150,
+        "median_tool_calls": 5,
+        "silent_failures": 0
+      },
+      "playwright-script": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 75.10308300000179,
+        "min_ms": 65.59249999999884,
+        "max_ms": 80.47133299999405,
+        "median_output_tokens": 0,
+        "median_argument_tokens": 0,
+        "median_tool_calls": 0,
+        "silent_failures": 0
+      }
+    },
+    "select": {
+      "pixelpi": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 680.0746250000084,
+        "min_ms": 667.1287920000032,
+        "max_ms": 683.3875830000034,
+        "median_output_tokens": 282,
+        "median_argument_tokens": 69,
+        "median_tool_calls": 3,
+        "silent_failures": 0
+      },
+      "playwright-mcp": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 1121.5724169999994,
+        "min_ms": 1119.4713749999937,
+        "max_ms": 1127.8233330000076,
+        "median_output_tokens": 668,
+        "median_argument_tokens": 109,
+        "median_tool_calls": 6,
+        "silent_failures": 0
+      },
+      "playwright-script": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 64.01133299999492,
+        "min_ms": 62.40070799997193,
+        "max_ms": 73.26170800000182,
+        "median_output_tokens": 0,
+        "median_argument_tokens": 0,
+        "median_tool_calls": 0,
+        "silent_failures": 0
+      }
+    },
+    "checkbox": {
+      "pixelpi": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 672.8762080000015,
+        "min_ms": 663.276165999996,
+        "max_ms": 683.656583,
+        "median_output_tokens": 200,
+        "median_argument_tokens": 66,
+        "median_tool_calls": 3,
+        "silent_failures": 0
+      },
+      "playwright-mcp": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 1644.291709000001,
+        "min_ms": 1609.158666000003,
+        "max_ms": 1663.3228329999984,
+        "median_output_tokens": 642,
+        "median_argument_tokens": 105,
+        "median_tool_calls": 6,
+        "silent_failures": 0
+      },
+      "playwright-script": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 93.8637499999968,
+        "min_ms": 92.419458999997,
+        "max_ms": 97.28262499999255,
+        "median_output_tokens": 0,
+        "median_argument_tokens": 0,
+        "median_tool_calls": 0,
+        "silent_failures": 0
+      }
+    },
+    "long-page": {
+      "pixelpi": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 399.36854199998197,
+        "min_ms": 388.109540999998,
+        "max_ms": 416.62804199999664,
+        "median_output_tokens": 4135,
+        "median_argument_tokens": 64,
+        "median_tool_calls": 3,
+        "silent_failures": 0
+      },
+      "playwright-mcp": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 1158.7413339999985,
+        "min_ms": 1147.3942080000015,
+        "max_ms": 1164.9103750000068,
+        "median_output_tokens": 12351,
+        "median_argument_tokens": 78,
+        "median_tool_calls": 4,
+        "silent_failures": 0
+      },
+      "playwright-script": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 63.93308399998932,
+        "min_ms": 61.48483299999498,
+        "max_ms": 65.94524999998976,
+        "median_output_tokens": 0,
+        "median_argument_tokens": 0,
+        "median_tool_calls": 0,
+        "silent_failures": 0
+      }
+    },
+    "prefilled": {
+      "pixelpi": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 815.1004580000008,
+        "min_ms": 813.244832999997,
+        "max_ms": 822.412249999994,
+        "median_output_tokens": 475,
+        "median_argument_tokens": 94,
+        "median_tool_calls": 3,
+        "silent_failures": 0
+      },
+      "playwright-mcp": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 1139.8038749999978,
+        "min_ms": 1130.6063330000034,
+        "max_ms": 1151.6477909999958,
+        "median_output_tokens": 664,
+        "median_argument_tokens": 153,
+        "median_tool_calls": 5,
+        "silent_failures": 0
+      },
+      "playwright-script": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 75.78649999999834,
+        "min_ms": 63.53408300000592,
+        "max_ms": 79.99270900001284,
+        "median_output_tokens": 0,
+        "median_argument_tokens": 0,
+        "median_tool_calls": 0,
+        "silent_failures": 0
+      }
+    },
+    "delayed": {
+      "pixelpi": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 1368.7976670000062,
+        "min_ms": 1362.2331249999988,
+        "max_ms": 1382.9362919999985,
+        "median_output_tokens": 202,
+        "median_argument_tokens": 68,
+        "median_tool_calls": 3,
+        "silent_failures": 0
+      },
+      "playwright-mcp": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 2475.092000000004,
+        "min_ms": 2464.678208000001,
+        "max_ms": 2484.083457999979,
+        "median_output_tokens": 597,
+        "median_argument_tokens": 105,
+        "median_tool_calls": 6,
+        "silent_failures": 0
+      },
+      "playwright-script": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 1435.8642919999984,
+        "min_ms": 1422.6018329999933,
+        "max_ms": 1443.158374999999,
+        "median_output_tokens": 0,
+        "median_argument_tokens": 0,
+        "median_tool_calls": 0,
+        "silent_failures": 0
+      }
+    },
+    "shadow": {
+      "pixelpi": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 351.2695829999866,
+        "min_ms": 338.04124999999476,
+        "max_ms": 353.59479100001045,
+        "median_output_tokens": 121,
+        "median_argument_tokens": 51,
+        "median_tool_calls": 2,
+        "silent_failures": 0
+      },
+      "playwright-mcp": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 1102.6998329999915,
+        "min_ms": 1094.1396250000107,
+        "max_ms": 1125.0146249999816,
+        "median_output_tokens": 365,
+        "median_argument_tokens": 75,
+        "median_tool_calls": 4,
+        "silent_failures": 0
+      },
+      "playwright-script": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 65.42270900000585,
+        "min_ms": 62.58345800000825,
+        "max_ms": 67.03420900000492,
+        "median_output_tokens": 0,
+        "median_argument_tokens": 0,
+        "median_tool_calls": 0,
+        "silent_failures": 0
+      }
+    },
+    "iframe": {
+      "pixelpi": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 354.046208000007,
+        "min_ms": 346.7149999999965,
+        "max_ms": 411.27362500000163,
+        "median_output_tokens": 137,
+        "median_argument_tokens": 52,
+        "median_tool_calls": 2,
+        "silent_failures": 0
+      },
+      "playwright-mcp": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 1143.3097919999855,
+        "min_ms": 1128.216042,
+        "max_ms": 1162.9314999999988,
+        "median_output_tokens": 437,
+        "median_argument_tokens": 76,
+        "median_tool_calls": 4,
+        "silent_failures": 0
+      },
+      "playwright-script": {
+        "passes": 5,
+        "trials": 5,
+        "median_ms": 85.63649999999325,
+        "min_ms": 84.7208329999994,
+        "max_ms": 89.7280410000094,
+        "median_output_tokens": 0,
+        "median_argument_tokens": 0,
+        "median_tool_calls": 0,
+        "silent_failures": 0
+      }
+    }
+  },
+  "common_success_tasks": [
+    "extract",
+    "search",
+    "form",
+    "select",
+    "checkbox",
+    "long-page",
+    "prefilled",
+    "delayed",
+    "shadow",
+    "iframe"
+  ],
+  "systems": {
+    "pixelpi": {
+      "passes": 50,
+      "trials": 50,
+      "silent_failures": 0,
+      "median_boot_ms": 461.0566459999973,
+      "sum_common_task_medians_ms": 6481.487540999966,
+      "sum_common_task_median_output_tokens": 6393,
+      "sum_common_task_median_argument_tokens": 700
+    },
+    "playwright-mcp": {
+      "passes": 50,
+      "trials": 50,
+      "silent_failures": 0,
+      "median_boot_ms": 1034.9403955000016,
+      "sum_common_task_medians_ms": 13160.208126999984,
+      "sum_common_task_median_output_tokens": 17296,
+      "sum_common_task_median_argument_tokens": 1060
+    },
+    "playwright-script": {
+      "passes": 50,
+      "trials": 50,
+      "silent_failures": 0,
+      "median_boot_ms": 313.2685210000018,
+      "sum_common_task_medians_ms": 2079.839250999972,
+      "sum_common_task_median_output_tokens": 0,
+      "sum_common_task_median_argument_tokens": 0
+    }
+  },
+  "definition_tokens": {
+    "pixelpi": {
+      "tools": 6,
+      "pretty": 1195,
+      "compact": 789,
+      "normalizedCompact": 789
+    },
+    "playwright-mcp": {
+      "tools": 25,
+      "pretty": 6551,
+      "compact": 4413,
+      "normalizedCompact": 3764
+    }
+  },
+  "ratios": {
+    "playwright_mcp_over_pixelpi_time_common_tasks": 2.0304302127794607,
+    "pixelpi_over_direct_script_time_common_tasks": 3.116340620018452,
+    "playwright_mcp_over_pixelpi_output_tokens_common_tasks": 2.7054590958861255,
+    "mean_per_common_task_output_token_ratio": 2.568356304279716,
+    "normalized_compact_definition_token_ratio": 4.770595690747782
+  }
+}
