@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { launchChrome, createBrowserTools } from "@josharsh/pixelpi-cdp";
 import { MemoryStore } from "@josharsh/pixelpi-core";
 import { replayTrace } from "../../packages/agent/src/replay.ts";
+import { createRecorder } from "../../packages/agent/src/record.ts";
 
 const server = createServer((req, res) => {
   res.setHeader("Content-Type", "text/html");
@@ -354,6 +355,54 @@ test("real Chrome browser readiness", { timeout: 120000 }, async (t) => {
       });
       assert.equal(multiTab.ok, true, multiTab.error);
       assert.equal(multiTab.output, "original");
+
+      // Record real tool observations, then replay them in a fresh Chrome. The
+      // first tab-bearing observation is the new tab, not an initial look.
+      const recorder = createRecorder();
+      let callId = 0;
+      const recordedCall = async (
+        name: string,
+        input: Record<string, unknown>,
+      ) => {
+        const toolUseId = String(++callId);
+        recorder.onEvent({
+          type: "tool_start",
+          step: callId,
+          toolUseId,
+          name,
+          input,
+        });
+        const result = await good(name, input);
+        recorder.onEvent({
+          type: "tool_end",
+          step: callId,
+          toolUseId,
+          name,
+          result,
+          ms: 0,
+        });
+      };
+      await good("nav", { action: "goto", arg: "about:blank" });
+      const { targetInfo } = await browser.session.send<{
+        targetInfo: { targetId: string };
+      }>("Target.getTargetInfo");
+      await recordedCall("nav", { action: "newtab", arg: origin + "/child" });
+      await recordedCall("nav", {
+        action: "switchtab",
+        arg: targetInfo.targetId,
+      });
+      await recordedCall("eval", {
+        fn: "()=>location.href",
+        opts: { world: "main" },
+      });
+      const recorded = recorder.build("return to original tab", "no-model");
+      const navigation = recorded.steps.filter((step) => step.tool === "nav");
+      assert.equal(navigation[0].input.tab, 1);
+      assert.equal(navigation[1].input.tab, 0);
+      const roundTrip = await run(recorded);
+      assert.equal(roundTrip.ok, true, roundTrip.error);
+      assert.equal(roundTrip.output, "about:blank");
+
       const missing = await run({
         ...base,
         output: { from: "none", required: true },

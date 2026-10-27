@@ -109,8 +109,16 @@ export function createRecorder(): Recorder {
       // Do NOT touch seenRefs - the retry needs the same ref context.
       if (e.result.isError) return;
       const observed = e.result.observation as
-        | { targetId?: string }
+        | { targetId?: string; previousTargetId?: string }
         | undefined;
+      // The first recorded observation may be the new tab itself. Establish the
+      // original tab before assigning an index to the newly created target.
+      if (
+        input?.action === "newtab" &&
+        observed?.previousTargetId &&
+        !tabs.has(observed.previousTargetId)
+      )
+        tabs.set(observed.previousTargetId, tabs.size);
       if (observed?.targetId && !tabs.has(observed.targetId))
         tabs.set(observed.targetId, tabs.size);
       if (e.name === "look") {

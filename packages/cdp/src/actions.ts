@@ -614,6 +614,9 @@ export async function nav(
           throw new Error(
             "Tab switching requires a browser-level CDP connection",
           );
+        const { targetInfo } = await ctx.session.send<{
+          targetInfo: { targetId: string };
+        }>("Target.getTargetInfo", {});
         const created = await ctx.session.send<{ targetId: string }>(
           "Target.createTarget",
           { url: "about:blank" },
@@ -622,6 +625,7 @@ export async function nav(
         const fresh = await nav(ctx, "goto", arg ?? "about:blank");
         return {
           ...fresh,
+          result: { ...fresh.result, previousTargetId: targetInfo.targetId },
           text: `created new tab ${created.targetId}\n${fresh.text}`,
         };
       }

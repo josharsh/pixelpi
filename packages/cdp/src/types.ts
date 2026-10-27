@@ -57,6 +57,8 @@ export interface Ref {
 
 export interface Snapshot {
   targetId?: string;
+  /** Tab that was active immediately before a new tab was created. */
+  previousTargetId?: string;
   url: string;
   title: string;
   refs: Ref[];
@@ -68,6 +70,7 @@ export interface Snapshot {
 /** Returned by act/fill/nav — only what changed, never the whole page. */
 export interface SnapshotDelta {
   targetId?: string;
+  previousTargetId?: string;
   url: string;
   title: string;
   /** Human-readable summary of the change + any newly-relevant refs. */
