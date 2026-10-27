@@ -11,6 +11,15 @@ packages version independently and are only listed when they changed.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-10-27
+
+### Changed
+
+- `launchChrome().client` now connects to the browser target; use the returned
+  `session` for page commands. Replay exposes saved text as `recordedFinalText`
+  and reports fresh output and execution errors separately.
+- Publish `@josharsh/pixelpi-core` 0.2.1 and `@josharsh/pixelpi-cdp` 0.4.0.
+
 ### Fixed
 
 - Browser actions replace and verify existing field values, wait for actionable
