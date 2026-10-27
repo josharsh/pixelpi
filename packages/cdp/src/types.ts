@@ -11,11 +11,20 @@ export type { Store, Tool };
 /** A single CDP session bound to one target (tab). Thin wrapper over the WebSocket JSON protocol. */
 export interface CdpSession {
   /** Send a CDP command and await its result. Throws on protocol error. */
-  send<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
+  send<T = unknown>(
+    method: string,
+    params?: Record<string, unknown>,
+    options?: { signal?: AbortSignal; timeoutMs?: number },
+  ): Promise<T>;
   /** Subscribe to a CDP event (e.g. "Page.frameNavigated"). Returns an unsubscribe fn. */
   on(event: string, handler: (params: unknown) => void): () => void;
   /** Wait for one occurrence of a CDP event, optionally filtered, with timeout. */
-  once<T = unknown>(event: string, opts?: { timeoutMs?: number; filter?: (p: T) => boolean }): Promise<T>;
+  once<T = unknown>(
+    event: string,
+    opts?: { timeoutMs?: number; filter?: (p: T) => boolean },
+  ): Promise<T>;
+  selectTarget?(targetId: string): Promise<void>;
+  frameSessions?(): Promise<CdpSession[]>;
 }
 
 export interface LaunchOptions {
@@ -42,9 +51,12 @@ export interface Ref {
   name: string;
   /** Compact state flags, e.g. "checked", "disabled", "focused", "value=foo". */
   state?: string;
+  /** Frame ancestry by child index. Empty/absent is the top frame. */
+  frame?: string;
 }
 
 export interface Snapshot {
+  targetId?: string;
   url: string;
   title: string;
   refs: Ref[];
@@ -55,6 +67,7 @@ export interface Snapshot {
 
 /** Returned by act/fill/nav — only what changed, never the whole page. */
 export interface SnapshotDelta {
+  targetId?: string;
   url: string;
   title: string;
   /** Human-readable summary of the change + any newly-relevant refs. */
@@ -105,7 +118,13 @@ export interface BrowserToolsOptions {
    * Ask before each consequential action. Resolve true to proceed, false to withhold.
    * When set together with dryRun, dryRun wins (never asks, never commits).
    */
-  confirmAction?: (action: import("./guardrails").PendingAction) => Promise<boolean>;
+  confirmAction?: (
+    action: import("./guardrails").PendingAction,
+  ) => Promise<boolean>;
+  /** Bounded action/wait duration; default 5000 ms. */
+  timeoutMs?: number;
+  /** Bound one complete tool operation, including eval. Default 30 seconds. */
+  operationTimeoutMs?: number;
 }
 
 /**

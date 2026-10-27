@@ -1,0 +1,39 @@
+{
+  "viewport": {
+    "width": 756,
+    "height": 413
+  },
+  "browserInfo": {
+    "pixelpi": {
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+      "width": 756,
+      "height": 413
+    },
+    "playwright-mcp": {
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+      "width": 756,
+      "height": 413
+    },
+    "playwright-script": {
+      "version": "155.0.8059.86",
+      "viewport": {
+        "width": 756,
+        "height": 413
+      }
+    }
+  },
+  "definitionTokens": {
+    "pixelpi": {
+      "tools": 6,
+      "pretty": 1195,
+      "compact": 789,
+      "normalizedCompact": 789
+    },
+    "playwright-mcp": {
+      "tools": 25,
+      "pretty": 6551,
+      "compact": 4413,
+      "normalizedCompact": 3764
+    }
+  }
+}

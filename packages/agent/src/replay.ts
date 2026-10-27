@@ -1,6 +1,12 @@
+import { isDeepStrictEqual } from "node:util";
 import { createProvider } from "@josharsh/pixelpi-ai";
 import { runAgent, JsonFileStore } from "@josharsh/pixelpi-core";
-import type { AgentEvent, Store, ToolContext, ToolResult } from "@josharsh/pixelpi-core";
+import type {
+  AgentEvent,
+  Store,
+  ToolContext,
+  ToolResult,
+} from "@josharsh/pixelpi-core";
 import { launchChrome, createBrowserTools } from "@josharsh/pixelpi-cdp";
 import type { Ref } from "@josharsh/pixelpi-cdp";
 import type { ResolvedSettings } from "./config";
@@ -23,6 +29,9 @@ export interface ReplayResult {
   steps: ReplayStep[];
   drift?: { step: number; reason: string };
   finalText?: string;
+  recordedFinalText?: string;
+  error?: string;
+  verified?: boolean;
   /** Return value of the last successfully executed eval step, if any. */
   output?: unknown;
 }
@@ -85,8 +94,13 @@ function refsOf(observation: unknown): Ref[] {
 }
 
 export async function replayTrace(opts: ReplayOptions): Promise<ReplayResult> {
-  const { trace, settings, tracePath, heal, signal, onStep } = opts;
-  const ctx: ToolContext = { signal: signal ?? new AbortController().signal, emit: () => {} };
+  const { settings, tracePath, heal, signal, onStep } = opts;
+  const trace = structuredClone(opts.trace);
+  let repairedTrace = false;
+  const ctx: ToolContext = {
+    signal: signal ?? new AbortController().signal,
+    emit: () => {},
+  };
   // The output is the value of the designated eval step (defaults to the last eval). Capturing only
   // that step keeps result.output deterministic and matches what `describe` reports.
   const outSpec = defaultOutput(trace);
@@ -112,7 +126,15 @@ export async function replayTrace(opts: ReplayOptions): Promise<ReplayResult> {
   }
   const store: Store = opts.store ?? new JsonFileStore(settings.storePath);
   const tools = createBrowserTools({ session: launched.session, store });
-  const byName = new Map(tools.map((t) => [t.name, t]));
+  const checked = tools.map((t) => ({
+    ...t,
+    execute: async (...args: Parameters<typeof t.execute>) => {
+      const res = await t.execute(...args);
+      if (res.isError) throw new Error(`${t.name}: ${res.content}`);
+      return res;
+    },
+  }));
+  const byName = new Map(checked.map((t) => [t.name, t]));
   const lookTool = byName.get("look")!;
   const actTool = byName.get("act")!;
   const fillTool = byName.get("fill")!;
@@ -120,21 +142,51 @@ export async function replayTrace(opts: ReplayOptions): Promise<ReplayResult> {
   const evalTool = byName.get("eval")!;
   const storeTool = byName.get("store")!;
 
-  const result: ReplayResult = { ok: true, steps: [], finalText: trace.result?.finalText };
+  const result: ReplayResult = {
+    ok: true,
+    steps: [],
+    recordedFinalText: trace.result?.finalText,
+    verified: false,
+  };
 
   function emitStep(step: ReplayStep): void {
     result.steps.push(step);
     onStep?.(step);
   }
 
+  let currentStep = 0;
+  const tabs = new Map<number, string>();
   try {
+    if (
+      trace.steps.some((s) => s.tool === "nav" && s.input.tab !== undefined)
+    ) {
+      const { targetInfo } = await launched.session.send<{
+        targetInfo: { targetId: string };
+      }>("Target.getTargetInfo", {});
+      tabs.set(0, targetInfo.targetId);
+    }
     for (let i = 0; i < trace.steps.length; i++) {
       if (signal?.aborted) throw new AbortError();
+      currentStep = i;
       const step = trace.steps[i]!;
       const label = labelFor(step);
 
       if (step.tool === "nav") {
-        await navTool.execute({ action: step.input.action, arg: step.input.arg }, ctx);
+        let arg = step.input.arg;
+        if (step.input.action === "switchtab" && step.input.tab !== undefined) {
+          arg = tabs.get(step.input.tab);
+          if (!arg)
+            throw new Error(`Recorded tab ${step.input.tab} is unavailable`);
+        }
+        const navResult = await navTool.execute(
+          { action: step.input.action, arg },
+          ctx,
+        );
+        if (step.input.action === "newtab" && step.input.tab !== undefined) {
+          const id = (navResult.observation as { targetId?: string })?.targetId;
+          if (!id) throw new Error("New tab did not return an identity");
+          tabs.set(step.input.tab, id);
+        }
         emitStep({ i, tool: "nav", label, status: "ok" });
         continue;
       }
@@ -144,14 +196,19 @@ export async function replayTrace(opts: ReplayOptions): Promise<ReplayResult> {
           { fn: step.input.fn, args: step.input.args, opts: step.input.opts },
           ctx,
         );
-        if (outSpec.from === "eval" && outSpec.step === i) result.output = evalOutput(evalRes);
+        if (outSpec.from === "eval" && outSpec.step === i)
+          result.output = evalOutput(evalRes);
         emitStep({ i, tool: "eval", label, status: "ok" });
         continue;
       }
 
       if (step.tool === "store") {
         await storeTool.execute(
-          { action: step.input.action, key: step.input.key, value: step.input.value },
+          {
+            action: step.input.action,
+            key: step.input.key,
+            value: step.input.value,
+          },
           ctx,
         );
         emitStep({ i, tool: "store", label, status: "ok" });
@@ -165,7 +222,10 @@ export async function replayTrace(opts: ReplayOptions): Promise<ReplayResult> {
       if (step.tool === "act") {
         const match = resolveTarget(refs, step.target);
         if ("ref" in match) {
-          await actTool.execute({ ref: match.ref, op: step.op, value: step.value }, ctx);
+          await actTool.execute(
+            { ref: match.ref, op: step.op, value: step.value },
+            ctx,
+          );
           emitStep({ i, tool: "act", label, status: "ok" });
           continue;
         }
@@ -195,6 +255,38 @@ export async function replayTrace(opts: ReplayOptions): Promise<ReplayResult> {
       if (!healed) return result;
     }
 
+    if (outSpec.from === "store")
+      result.output = await store.get(outSpec.key ?? "");
+    if (outSpec.required && result.output == null)
+      throw new Error("Required replay output is missing");
+    for (const assertion of trace.assertions ?? []) {
+      const checked = await evalTool.execute(
+        { fn: assertion.fn, args: assertion.args },
+        ctx,
+      );
+      if (!isDeepStrictEqual(evalOutput(checked), assertion.equals))
+        throw new Error(
+          `Replay assertion failed: ${assertion.name ?? assertion.fn}`,
+        );
+    }
+    result.verified = !!trace.assertions?.length;
+    if (repairedTrace) {
+      Object.assign(opts.trace, trace);
+      saveTrace(tracePath, trace);
+    }
+    return result;
+  } catch (error) {
+    if (signal?.aborted) throw new AbortError();
+    result.ok = false;
+    result.error = error instanceof Error ? error.message : String(error);
+    const step = trace.steps[currentStep];
+    emitStep({
+      i: currentStep,
+      tool: step?.tool ?? "verification",
+      label: step ? labelFor(step) : "verification",
+      status: "error",
+      detail: result.error,
+    });
     return result;
   } finally {
     signal?.removeEventListener("abort", onAbort);
@@ -205,9 +297,19 @@ export async function replayTrace(opts: ReplayOptions): Promise<ReplayResult> {
    * Handle a drift at step i. Returns true if replay should continue (healed or recoverable),
    * false if it should stop (strict drift, or healed too far). Mutates result on stop.
    */
-  async function onDrift(i: number, step: TargetedStep, reason: string): Promise<boolean> {
+  async function onDrift(
+    i: number,
+    step: TargetedStep,
+    reason: string,
+  ): Promise<boolean> {
     if (!heal) {
-      emitStep({ i, tool: step.tool, label: labelFor(step), status: "drift", detail: reason });
+      emitStep({
+        i,
+        tool: step.tool,
+        label: labelFor(step),
+        status: "drift",
+        detail: reason,
+      });
       result.ok = false;
       result.drift = { step: i, reason };
       return false;
@@ -215,14 +317,26 @@ export async function replayTrace(opts: ReplayOptions): Promise<ReplayResult> {
 
     const progressed = await microRepair(i, step);
     if (progressed) {
-      emitStep({ i, tool: step.tool, label: labelFor(trace.steps[i]!), status: "ok", detail: "healed" });
+      emitStep({
+        i,
+        tool: step.tool,
+        label: labelFor(trace.steps[i]!),
+        status: "ok",
+        detail: "healed",
+      });
       return true;
     }
 
     // A repair that made no progress is a hard stop: the step never executed, and skipping it
     // would leave the flow in a wrong state with no drift reported. Abort immediately so the run
     // reports drift (exit 3) instead of a false success.
-    emitStep({ i, tool: step.tool, label: labelFor(step), status: "drift", detail: reason });
+    emitStep({
+      i,
+      tool: step.tool,
+      label: labelFor(step),
+      status: "drift",
+      detail: reason,
+    });
     result.ok = false;
     result.drift = {
       step: i,
@@ -244,8 +358,8 @@ export async function replayTrace(opts: ReplayOptions): Promise<ReplayResult> {
     const looked = await lookTool.execute({}, ctx);
     const want =
       step.tool === "act"
-        ? `${step.op} the ${step.target.role} named "${step.target.name}"`
-        : `fill ${step.fields.map((f) => `the ${f.target.role} named "${f.target.name}"`).join(" and ")}`;
+        ? `${step.op} the ${step.target.role} named "${step.target.name}" with value ${JSON.stringify(step.value)}`
+        : `fill ${step.fields.map((f) => `the ${f.target.role} named "${f.target.name}" with value ${JSON.stringify(f.value)}`).join(" and ")}`;
 
     const recorder = createRecorder();
     const onEvent = (e: AgentEvent) => recorder.onEvent(e);
@@ -267,10 +381,12 @@ export async function replayTrace(opts: ReplayOptions): Promise<ReplayResult> {
     });
 
     const repaired = recorder.build("repair", settings.model);
-    const newStep = repaired.steps.find((s) => s.tool === "act" || s.tool === "fill");
+    const newStep = repaired.steps.find(
+      (s) => s.tool === "act" || s.tool === "fill",
+    );
     if (!newStep) return false;
     trace.steps[i] = newStep;
-    saveTrace(tracePath, trace);
+    repairedTrace = true;
     return true;
   }
 }

@@ -1,0 +1,106 @@
+{
+  "startedAt": "2026-10-26T07:48:19.117Z",
+  "repeats": 5,
+  "tasks": [
+    {
+      "id": "extract",
+      "group": "core",
+      "description": "Read the current invoice reference",
+      "expected": "INV-2048"
+    },
+    {
+      "id": "search",
+      "group": "core",
+      "description": "Search for copper, then open its details",
+      "expected": {
+        "item": "copper"
+      }
+    },
+    {
+      "id": "form",
+      "group": "core",
+      "description": "Fill and save a blank contact form",
+      "expected": {
+        "name": "Ada Lovelace",
+        "email": "ada@example.test",
+        "city": "London"
+      }
+    },
+    {
+      "id": "select",
+      "group": "core",
+      "description": "Choose the Pro plan and save",
+      "expected": {
+        "plan": "pro"
+      }
+    },
+    {
+      "id": "checkbox",
+      "group": "core",
+      "description": "Enable email updates and save",
+      "expected": {
+        "updates": true
+      }
+    },
+    {
+      "id": "long-page",
+      "group": "core",
+      "description": "Open Record 240 on a page with 240 buttons",
+      "expected": {
+        "record": 240
+      }
+    },
+    {
+      "id": "prefilled",
+      "group": "stress",
+      "description": "Replace existing values in a contact form",
+      "expected": {
+        "name": "Ada Lovelace",
+        "email": "ada@example.test",
+        "city": "London"
+      }
+    },
+    {
+      "id": "delayed",
+      "group": "stress",
+      "description": "Prepare, then click Launch as it becomes enabled after 900ms",
+      "expected": {
+        "launched": true
+      }
+    },
+    {
+      "id": "shadow",
+      "group": "stress",
+      "description": "Activate a button inside an open shadow root",
+      "expected": {
+        "shadow": true
+      }
+    },
+    {
+      "id": "iframe",
+      "group": "stress",
+      "description": "Activate a button inside a same-origin iframe",
+      "expected": {
+        "frame": true
+      }
+    }
+  ],
+  "pixelpiCommit": "2579d5563180f3d18eb4bebe5b6631439b583a65",
+  "pixelpiVersion": "0.6.1",
+  "playwrightMcpVersion": "0.0.83",
+  "playwrightVersion": "1.64.0-alpha-1790635538000",
+  "environment": {
+    "node": "v20.17.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M3 Pro"
+  },
+  "sourceHashes": {
+    "bench/comparison/run.ts": "01090823fdc8265fdeb4ee4a759b2cb6d7b5d9fcfca18fa7672d87241415b16a",
+    "bench/comparison/fixture.ts": "c65834baad0a8d9f13772150eb8bf9d215e1f97f21c54fbce8e181270945746e",
+    "bench/comparison/refs.ts": "9ea0d0ffb7bc7cf0d4d2474964ee16e0f0c56d9457a979ff0499690c2af200eb",
+    "bench/mcp-client.ts": "532714a144f7079b11b80983298df5d76765aa9fd990f2e46a79d25f05092db3",
+    "pnpm-lock.yaml": "6875bef072e0c447fc5c7bb30cca55e404f171d9291fd3bdd228ec5cdf3d9761"
+  },
+  "protocol": "Ten fixed synthetic tasks; fresh process/browser per trial; local fixture reset via unique run ID; defaults for action wait/settle; warmup and boot separate from task timing; rotating system order; 5 repetitions; independent server-side exact event oracle; no LLM or retries; no adaptive repair; no production agent changes."
+}

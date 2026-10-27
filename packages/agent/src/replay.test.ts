@@ -8,6 +8,7 @@ import type { Trace } from "./trace";
 
 const closeSpy = vi.fn(async () => {});
 let pageRefs: Ref[] = [];
+let failTool: string | undefined;
 const calls: { name: string; input: Record<string, unknown> }[] = [];
 
 vi.mock("@josharsh/pixelpi-cdp", () => {
@@ -17,19 +18,32 @@ vi.mock("@josharsh/pixelpi-cdp", () => {
     inputSchema: {},
     async execute(input) {
       calls.push({ name, input });
+      if (name === failTool)
+        return { content: "deliberate tool failure", isError: true };
       if (name === "look") {
-        return { content: "page", observation: { url: "u", title: "t", refs: pageRefs, mode: "a11y" } };
+        return {
+          content: "page",
+          observation: { url: "u", title: "t", refs: pageRefs, mode: "a11y" },
+        };
       }
       if (name === "eval") {
         // value mirrors the fn so a test can tell which eval step's value was captured.
-        return { content: JSON.stringify(input.fn ?? null), observation: { value: input.fn } };
+        return {
+          content: JSON.stringify(input.fn ?? null),
+          observation: { value: input.fn },
+        };
       }
-      return { content: `${name} ok`, observation: { url: "u", title: "t", summary: "ok", refs: [] } };
+      return {
+        content: `${name} ok`,
+        observation: { url: "u", title: "t", summary: "ok", refs: [] },
+      };
     },
   });
   return {
     launchChrome: vi.fn(async () => ({ session: {}, close: closeSpy })),
-    createBrowserTools: vi.fn(() => ["look", "act", "fill", "nav", "eval", "store"].map(makeTool)),
+    createBrowserTools: vi.fn(() =>
+      ["look", "act", "fill", "nav", "eval", "store"].map(makeTool),
+    ),
   };
 });
 
@@ -78,6 +92,7 @@ function ref(n: number, role: string, name: string): Ref {
 
 beforeEach(() => {
   calls.length = 0;
+  failTool = undefined;
   closeSpy.mockClear();
   runAgentSpy.mockReset();
   saveTraceSpy.mockClear();
@@ -94,15 +109,38 @@ describe("replayTrace strict", () => {
       createdAt: "now",
       steps: [
         { tool: "nav", input: { action: "goto", arg: "https://x" } },
-        { tool: "act", op: "click", target: { role: "button", name: "Sign in", ordinal: 0 } },
-        { tool: "fill", fields: [{ target: { role: "textbox", name: "Email", ordinal: 0 }, value: "a@b" }] },
+        {
+          tool: "act",
+          op: "click",
+          target: { role: "button", name: "Sign in", ordinal: 0 },
+        },
+        {
+          tool: "fill",
+          fields: [
+            {
+              target: { role: "textbox", name: "Email", ordinal: 0 },
+              value: "a@b",
+            },
+          ],
+        },
         { tool: "eval", input: { fn: "return 1" } },
         { tool: "store", input: { action: "set", key: "k", value: 1 } },
       ],
     };
-    const r = await replayTrace({ trace, settings, tracePath: "/tmp/x.json", heal: false });
+    const r = await replayTrace({
+      trace,
+      settings,
+      tracePath: "/tmp/x.json",
+      heal: false,
+    });
     expect(r.ok).toBe(true);
-    expect(r.steps.map((s) => s.status)).toEqual(["ok", "ok", "ok", "ok", "ok"]);
+    expect(r.steps.map((s) => s.status)).toEqual([
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+    ]);
     // act and fill each triggered a look first
     expect(calls.filter((c) => c.name === "look").length).toBe(2);
     expect(calls.some((c) => c.name === "act" && c.input.ref === 1)).toBe(true);
@@ -117,9 +155,20 @@ describe("replayTrace strict", () => {
       task: "t",
       model: "m",
       createdAt: "now",
-      steps: [{ tool: "act", op: "click", target: { role: "button", name: "Gone", ordinal: 0 } }],
+      steps: [
+        {
+          tool: "act",
+          op: "click",
+          target: { role: "button", name: "Gone", ordinal: 0 },
+        },
+      ],
     };
-    const r = await replayTrace({ trace, settings, tracePath: "/tmp/x.json", heal: false });
+    const r = await replayTrace({
+      trace,
+      settings,
+      tracePath: "/tmp/x.json",
+      heal: false,
+    });
     expect(r.ok).toBe(false);
     expect(r.drift).toMatchObject({ step: 0 });
     expect(r.steps[0]!.status).toBe("drift");
@@ -137,13 +186,24 @@ describe("replayTrace strict", () => {
         {
           tool: "fill",
           fields: [
-            { target: { role: "textbox", name: "Email", ordinal: 0 }, value: "a@b" },
-            { target: { role: "textbox", name: "Password", ordinal: 0 }, value: "pw" },
+            {
+              target: { role: "textbox", name: "Email", ordinal: 0 },
+              value: "a@b",
+            },
+            {
+              target: { role: "textbox", name: "Password", ordinal: 0 },
+              value: "pw",
+            },
           ],
         },
       ],
     };
-    const r = await replayTrace({ trace, settings, tracePath: "/tmp/x.json", heal: false });
+    const r = await replayTrace({
+      trace,
+      settings,
+      tracePath: "/tmp/x.json",
+      heal: false,
+    });
     expect(r.ok).toBe(false);
     expect(r.drift).toMatchObject({ step: 0 });
     expect(r.drift?.reason).toMatch(/Password/);
@@ -162,9 +222,13 @@ describe("replayTrace strict", () => {
       createdAt: "now",
       steps: [{ tool: "nav", input: { action: "reload" } }],
     };
-    await replayTrace({ trace, settings, tracePath: "/tmp/x.json", heal: false, signal: ac.signal }).catch(
-      () => undefined,
-    );
+    await replayTrace({
+      trace,
+      settings,
+      tracePath: "/tmp/x.json",
+      heal: false,
+      signal: ac.signal,
+    }).catch(() => undefined);
     expect(closeSpy).toHaveBeenCalledOnce();
   });
 
@@ -179,7 +243,13 @@ describe("replayTrace strict", () => {
       steps: [{ tool: "nav", input: { action: "reload" } }],
     };
     await expect(
-      replayTrace({ trace, settings, tracePath: "/tmp/x.json", heal: false, signal: ac.signal }),
+      replayTrace({
+        trace,
+        settings,
+        tracePath: "/tmp/x.json",
+        heal: false,
+        signal: ac.signal,
+      }),
     ).rejects.toThrow(/aborted/);
     expect(closeSpy).toHaveBeenCalledOnce();
   });
@@ -198,13 +268,23 @@ describe("replayTrace output", () => {
   };
 
   it("captures the LAST eval's value as output by default", async () => {
-    const r = await replayTrace({ trace: twoEvals, settings, tracePath: "/tmp/x.json", heal: false });
+    const r = await replayTrace({
+      trace: twoEvals,
+      settings,
+      tracePath: "/tmp/x.json",
+      heal: false,
+    });
     expect(r.output).toBe("second");
   });
 
   it("honors an explicit output step over the last-eval default", async () => {
     const trace: Trace = { ...twoEvals, output: { from: "eval", step: 0 } };
-    const r = await replayTrace({ trace, settings, tracePath: "/tmp/x.json", heal: false });
+    const r = await replayTrace({
+      trace,
+      settings,
+      tracePath: "/tmp/x.json",
+      heal: false,
+    });
     expect(r.output).toBe("first");
   });
 });
@@ -213,34 +293,63 @@ describe("replayTrace heal", () => {
   it("repairs a drifted step, rewrites the trace, and continues", async () => {
     pageRefs = []; // the recorded "Old" button is gone -> step 0 drifts
     // The micro-repair model performs one act; the recorder captures it via the act-note fallback.
-    runAgentSpy.mockImplementation(async (opts: { onEvent: (e: unknown) => void }) => {
-      opts.onEvent({ type: "tool_start", step: 1, toolUseId: "r1", name: "act", input: { ref: 9, op: "click" } });
-      opts.onEvent({
-        type: "tool_end",
-        step: 1,
-        toolUseId: "r1",
-        name: "act",
-        result: { content: 'click on [9] button "New"', observation: { refs: [] } },
-        ms: 1,
-      });
-      return { messages: [], stopReason: "done", steps: 1, usage: { inputTokens: 0, outputTokens: 0 }, finalText: "" };
-    });
+    runAgentSpy.mockImplementation(
+      async (opts: { onEvent: (e: unknown) => void }) => {
+        opts.onEvent({
+          type: "tool_start",
+          step: 1,
+          toolUseId: "r1",
+          name: "act",
+          input: { ref: 9, op: "click" },
+        });
+        opts.onEvent({
+          type: "tool_end",
+          step: 1,
+          toolUseId: "r1",
+          name: "act",
+          result: {
+            content: 'click on [9] button "New"',
+            observation: { refs: [] },
+          },
+          ms: 1,
+        });
+        return {
+          messages: [],
+          stopReason: "done",
+          steps: 1,
+          usage: { inputTokens: 0, outputTokens: 0 },
+          finalText: "",
+        };
+      },
+    );
     const trace: Trace = {
       version: 1,
       task: "t",
       model: "m",
       createdAt: "now",
       steps: [
-        { tool: "act", op: "click", target: { role: "button", name: "Old", ordinal: 0 } },
+        {
+          tool: "act",
+          op: "click",
+          target: { role: "button", name: "Old", ordinal: 0 },
+        },
         { tool: "eval", input: { fn: "return 1" } },
       ],
     };
-    const r = await replayTrace({ trace, settings, tracePath: "/tmp/x.json", heal: true });
+    const r = await replayTrace({
+      trace,
+      settings,
+      tracePath: "/tmp/x.json",
+      heal: true,
+    });
     expect(r.ok).toBe(true);
     expect(r.steps[0]).toMatchObject({ status: "ok", detail: "healed" });
     expect(runAgentSpy).toHaveBeenCalledOnce();
     // the drifted step was rewritten in place with the new descriptor and persisted
-    expect(trace.steps[0]).toMatchObject({ tool: "act", target: { role: "button", name: "New" } });
+    expect(trace.steps[0]).toMatchObject({
+      tool: "act",
+      target: { role: "button", name: "New" },
+    });
     expect(saveTraceSpy).toHaveBeenCalledOnce();
     // replay continued past the healed step to the eval
     expect(r.steps[1]).toMatchObject({ tool: "eval", status: "ok" });
@@ -250,18 +359,37 @@ describe("replayTrace heal", () => {
   it("aborts immediately when a repair makes no progress and reports drift", async () => {
     pageRefs = [];
     // runAgent does nothing -> recorder captures no act/fill -> no progress
-    runAgentSpy.mockResolvedValue({ messages: [], stopReason: "done", steps: 0, usage: {}, finalText: "" });
+    runAgentSpy.mockResolvedValue({
+      messages: [],
+      stopReason: "done",
+      steps: 0,
+      usage: {},
+      finalText: "",
+    });
     const trace: Trace = {
       version: 1,
       task: "t",
       model: "m",
       createdAt: "now",
       steps: [
-        { tool: "act", op: "click", target: { role: "button", name: "A", ordinal: 0 } },
-        { tool: "act", op: "click", target: { role: "button", name: "B", ordinal: 0 } },
+        {
+          tool: "act",
+          op: "click",
+          target: { role: "button", name: "A", ordinal: 0 },
+        },
+        {
+          tool: "act",
+          op: "click",
+          target: { role: "button", name: "B", ordinal: 0 },
+        },
       ],
     };
-    const r = await replayTrace({ trace, settings, tracePath: "/tmp/x.json", heal: true });
+    const r = await replayTrace({
+      trace,
+      settings,
+      tracePath: "/tmp/x.json",
+      heal: true,
+    });
     expect(r.ok).toBe(false);
     expect(r.drift).toMatchObject({ step: 0 });
     expect(r.drift?.reason).toMatch(/repair made no progress/);
@@ -271,3 +399,53 @@ describe("replayTrace heal", () => {
     expect(closeSpy).toHaveBeenCalledOnce();
   });
 });
+
+it.each(["nav", "act", "fill", "eval", "store", "look"])(
+  "fails closed on %s errors without healing",
+  async (name) => {
+    failTool = name;
+    pageRefs = [ref(1, "button", "Save"), ref(2, "textbox", "Name")];
+    const steps: Record<string, Trace["steps"]> = {
+      nav: [{ tool: "nav", input: { action: "reload" } }],
+      act: [
+        {
+          tool: "act",
+          op: "click",
+          target: { role: "button", name: "Save", ordinal: 0 },
+        },
+      ],
+      fill: [
+        {
+          tool: "fill",
+          fields: [
+            {
+              target: { role: "textbox", name: "Name", ordinal: 0 },
+              value: "Ada",
+            },
+          ],
+        },
+      ],
+      eval: [{ tool: "eval", input: { fn: "value" } }],
+      store: [
+        { tool: "store", input: { action: "set", key: "key", value: 1 } },
+      ],
+    };
+    const trace: Trace = {
+      version: 1,
+      task: "test",
+      model: "unused",
+      createdAt: "now",
+      steps: steps[name] ?? steps.act,
+    };
+    const result = await replayTrace({
+      trace,
+      settings,
+      tracePath: "/tmp/x.json",
+      heal: true,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("deliberate tool failure");
+    expect(result.steps[0].status).toBe("error");
+    expect(runAgentSpy).not.toHaveBeenCalled();
+  },
+);

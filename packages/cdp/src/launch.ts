@@ -1,8 +1,16 @@
 import { execSync, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readlinkSync, unlinkSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  unlinkSync,
+} from "node:fs";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CdpClient } from "./client";
+import { BrowserSession } from "./browser-session";
 import type { CdpSession, LaunchOptions } from "./types";
 
 interface VersionInfo {
@@ -10,6 +18,7 @@ interface VersionInfo {
 }
 
 interface TargetInfo {
+  id: string;
   type: string;
   webSocketDebuggerUrl: string;
   url: string;
@@ -20,7 +29,11 @@ interface FatalError extends Error {
   fatal?: boolean;
 }
 
-async function poll<T>(fn: () => Promise<T>, timeoutMs: number, intervalMs = 100): Promise<T> {
+async function poll<T>(
+  fn: () => Promise<T>,
+  timeoutMs: number,
+  intervalMs = 100,
+): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   let lastErr: unknown;
   while (Date.now() < deadline) {
@@ -36,7 +49,10 @@ async function poll<T>(fn: () => Promise<T>, timeoutMs: number, intervalMs = 100
 }
 
 /** Turn a raw spawn error into an actionable message about Chrome. */
-function chromeLaunchError(err: NodeJS.ErrnoException, execPath: string): FatalError {
+function chromeLaunchError(
+  err: NodeJS.ErrnoException,
+  execPath: string,
+): FatalError {
   const e: FatalError =
     err.code === "ENOENT"
       ? new Error(
@@ -80,7 +96,9 @@ export function resolveChromePath(explicit?: string): string {
     ].filter(Boolean) as string[];
     for (const b of bases) {
       candidates.push(join(b, "Google", "Chrome", "Application", "chrome.exe"));
-      candidates.push(join(b, "Microsoft", "Edge", "Application", "msedge.exe"));
+      candidates.push(
+        join(b, "Microsoft", "Edge", "Application", "msedge.exe"),
+      );
     }
   }
 
@@ -90,9 +108,16 @@ export function resolveChromePath(explicit?: string): string {
 
   // On linux, fall back to anything on PATH.
   if (process.platform === "linux") {
-    for (const name of ["google-chrome-stable", "google-chrome", "chromium", "chromium-browser"]) {
+    for (const name of [
+      "google-chrome-stable",
+      "google-chrome",
+      "chromium",
+      "chromium-browser",
+    ]) {
       try {
-        const found = execSync(`which ${name}`, { stdio: ["ignore", "pipe", "ignore"] })
+        const found = execSync(`which ${name}`, {
+          stdio: ["ignore", "pipe", "ignore"],
+        })
           .toString()
           .trim();
         if (found) return found;
@@ -150,7 +175,7 @@ export function profileHolderClause(userDataDir: string): string {
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
   if (!res.ok) throw new Error(`${url} -> ${res.status}`);
   return (await res.json()) as T;
 }
@@ -160,25 +185,34 @@ function readActivePort(userDataDir: string): number {
   const file = join(userDataDir, "DevToolsActivePort");
   const contents = readFileSync(file, "utf8");
   const port = parseInt(contents.split("\n")[0]!.trim(), 10);
-  if (!Number.isFinite(port)) throw new Error("DevToolsActivePort not yet written");
+  if (!Number.isFinite(port))
+    throw new Error("DevToolsActivePort not yet written");
   return port;
 }
 
 /** Find an existing page target, or create one at startUrl. */
-async function resolvePageTarget(base: string, startUrl: string): Promise<TargetInfo> {
+async function resolvePageTarget(
+  base: string,
+  startUrl: string,
+): Promise<TargetInfo> {
   const list = await fetchJson<TargetInfo[]>(`${base}/json/list`);
   const page = list.find((t) => t.type === "page");
   if (page && page.webSocketDebuggerUrl) {
     return page;
   }
   // /json/new is a PUT in newer Chrome; encode the start url as the path query.
-  const res = await fetch(`${base}/json/new?${encodeURIComponent(startUrl)}`, { method: "PUT" });
+  const res = await fetch(`${base}/json/new?${encodeURIComponent(startUrl)}`, {
+    method: "PUT",
+  });
   if (!res.ok) throw new Error(`/json/new -> ${res.status}`);
   return (await res.json()) as TargetInfo;
 }
 
 /** The flags for a plain, human-driven Chrome — deliberately no debug port and no headless. */
-export function headedBrowserArgs(userDataDir: string, startUrl: string): string[] {
+export function headedBrowserArgs(
+  userDataDir: string,
+  startUrl: string,
+): string[] {
   return [
     `--user-data-dir=${userDataDir}`,
     "--no-first-run",
@@ -203,13 +237,20 @@ export async function spawnHeadedBrowser(opts: {
 }): Promise<{ proc: ChildProcess; close: () => Promise<void> }> {
   const executablePath = resolveChromePath(opts.executablePath);
   const startUrl = opts.startUrl ?? "about:blank";
-  const proc = spawn(executablePath, headedBrowserArgs(opts.userDataDir, startUrl), {
-    stdio: "ignore",
-  });
+  const proc = spawn(
+    executablePath,
+    headedBrowserArgs(opts.userDataDir, startUrl),
+    {
+      stdio: "ignore",
+    },
+  );
 
   let spawnError: FatalError | undefined;
   proc.once("error", (err) => {
-    spawnError = chromeLaunchError(err as NodeJS.ErrnoException, executablePath);
+    spawnError = chromeLaunchError(
+      err as NodeJS.ErrnoException,
+      executablePath,
+    );
   });
 
   // Give Chrome a beat to either stay up (a real window) or bail out: if the profile is already
@@ -251,9 +292,14 @@ export async function spawnHeadedBrowser(opts: {
 
 export async function launchChrome(
   opts: LaunchOptions = {},
-): Promise<{ client: CdpClient; session: CdpSession; close: () => Promise<void> }> {
+): Promise<{
+  client: CdpClient;
+  session: CdpSession;
+  close: () => Promise<void>;
+}> {
   const executablePath = resolveChromePath(opts.executablePath);
-  const userDataDir = opts.userDataDir ?? mkdtempSync(join(tmpdir(), "pixelpi-chrome-"));
+  const userDataDir =
+    opts.userDataDir ?? mkdtempSync(join(tmpdir(), "pixelpi-chrome-"));
   const port = opts.port ?? 0;
   const startUrl = opts.startUrl ?? "about:blank";
 
@@ -286,7 +332,10 @@ export async function launchChrome(
   // A missing/un-spawnable Chrome surfaces here (async) — capture it so poll() fails fast & friendly.
   let spawnError: FatalError | undefined;
   proc.once("error", (err) => {
-    spawnError = chromeLaunchError(err as NodeJS.ErrnoException, executablePath);
+    spawnError = chromeLaunchError(
+      err as NodeJS.ErrnoException,
+      executablePath,
+    );
   });
   // If Chrome exits before we've connected, another instance already owns this profile: Chrome's
   // singleton handed our command line to it and this process exits (code 21) without ever writing
@@ -310,6 +359,7 @@ export async function launchChrome(
   };
 
   let client: CdpClient;
+  let session: BrowserSession;
   try {
     let resolvedPort = port;
     if (port === 0) {
@@ -328,22 +378,34 @@ export async function launchChrome(
       guard();
       return resolvePageTarget(base, startUrl);
     }, 15000);
-    client = new CdpClient(target.webSocketDebuggerUrl);
+    const version = await fetchJson<VersionInfo>(`${base}/json/version`);
+    if (!version.webSocketDebuggerUrl)
+      throw new Error("No browser debug endpoint");
+    client = new CdpClient(version.webSocketDebuggerUrl);
     await client.whenReady();
+    session = new BrowserSession(client);
+    await session.selectTarget(target.id);
     // A persistent profile can restore the previous run's page into the tab we attach to,
     // silently handing the agent stale navigation state. Reset to startUrl: cookies and
     // storage (the point of --profile) survive; the leftover page does not.
     if (target.url && target.url !== startUrl) {
-      await client.send("Page.navigate", { url: startUrl }).catch(() => undefined);
+      await session.send("Page.navigate", { url: startUrl });
     }
     settled = true;
   } catch (err) {
     settled = true;
     if (!proc.killed) proc.kill();
+    if (!opts.userDataDir)
+      await rm(userDataDir, {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: 100,
+      }).catch(() => {});
     if (spawnError) throw spawnError;
     if (exitError) throw exitError;
     const e: FatalError = new Error(
-      `Couldn't reach Chrome's debug port for profile ${userDataDir}. ` +
+      `Couldn't reach Chrome's debug port for profile ${userDataDir}: ${(err as Error).message}. ` +
         `Chrome is probably already open with this profile — quit that window and retry, ` +
         `or use a fresh profile (omit --profile, or pass --profile=<a different dir>).`,
     );
@@ -353,31 +415,65 @@ export async function launchChrome(
 
   const close = async () => {
     client.close();
-    if (!proc.killed) proc.kill();
-    void userDataDir;
+    if (proc.exitCode === null && proc.signalCode === null) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => proc.kill("SIGKILL"), 5000);
+        proc.once("exit", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+        proc.kill();
+      });
+    }
+    if (!opts.userDataDir)
+      await rm(userDataDir, {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: 100,
+      });
   };
 
-  return { client, session: client, close };
+  return { client, session, close };
 }
 
 export async function connectChrome(
   wsOrHttpUrl: string,
-): Promise<{ client: CdpClient; session: CdpSession; close: () => Promise<void> }> {
+): Promise<{
+  client: CdpClient;
+  session: CdpSession;
+  close: () => Promise<void>;
+}> {
   let wsUrl = wsOrHttpUrl;
+  let targetId: string | undefined;
   if (wsOrHttpUrl.startsWith("http")) {
     const base = wsOrHttpUrl.replace(/\/$/, "");
-    const list = await fetchJson<TargetInfo[]>(`${base}/json/list`);
-    const page = list.find((t) => t.type === "page" && t.webSocketDebuggerUrl);
-    if (page) {
-      wsUrl = page.webSocketDebuggerUrl;
-    } else {
-      const ver = await fetchJson<VersionInfo>(`${base}/json/version`);
-      if (!ver.webSocketDebuggerUrl) throw new Error("No debuggable target found");
-      wsUrl = ver.webSocketDebuggerUrl;
-    }
+    const page = await resolvePageTarget(base, "about:blank");
+    targetId = page.id;
+    const ver = await fetchJson<VersionInfo>(`${base}/json/version`);
+    if (!ver.webSocketDebuggerUrl)
+      throw new Error("No debuggable target found");
+    wsUrl = ver.webSocketDebuggerUrl;
   }
   const client = new CdpClient(wsUrl);
   await client.whenReady();
   const close = async () => client.close();
+  if (wsUrl.includes("/devtools/browser/")) {
+    if (!targetId) {
+      const { targetInfos } = await client.send<{
+        targetInfos: { type: string; targetId: string }[];
+      }>("Target.getTargets");
+      targetId = targetInfos.find((t) => t.type === "page")?.targetId;
+      if (!targetId)
+        targetId = (
+          await client.send<{ targetId: string }>("Target.createTarget", {
+            url: "about:blank",
+          })
+        ).targetId;
+    }
+    const session = new BrowserSession(client);
+    await session.selectTarget(targetId);
+    return { client, session, close };
+  }
   return { client, session: client, close };
 }

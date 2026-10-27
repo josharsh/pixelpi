@@ -14,17 +14,22 @@
     "pixelpi": "tsx packages/agent/src/cli.ts",
     "bench:tokens": "tsx bench/efficiency.ts",
     "bench:tasks": "tsx bench/tasks.ts",
+    "bench:compare": "tsx bench/comparison/run.ts",
     "release": "pnpm -r build && pnpm -r publish --access public --no-git-checks",
-    "check:publish": "pnpm -r --filter './packages/*' exec publint"
+    "check:publish": "pnpm -r --filter './packages/*' exec publint",
+    "test:browser": "node --import tsx --test --test-concurrency=1 tests/browser/*.test.ts",
+    "test:bench": "node --import tsx --test bench/mcp-client.test.ts bench/task-scoring.test.ts bench/comparison/refs.test.ts"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.3",
     "@josharsh/pixelpi-ai": "workspace:*",
     "@josharsh/pixelpi-cdp": "workspace:*",
     "@josharsh/pixelpi-core": "workspace:*",
+    "@playwright/mcp": "0.0.83",
     "@types/node": "^22.19.21",
     "js-tiktoken": "^1.0.21",
     "pixelpi": "workspace:*",
+    "playwright": "1.64.0-alpha-1790635538000",
     "publint": "^0.3.21",
     "tsup": "^8.5.1",
     "tsx": "^4.22.4",

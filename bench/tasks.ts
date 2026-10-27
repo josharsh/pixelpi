@@ -6,6 +6,9 @@
  * Run: node --import tsx bench/tasks.ts
  */
 import { createBrowserAgentSession } from "pixelpi";
+import { MemoryStore, type AgentStopReason } from "@josharsh/pixelpi-core";
+import { writeFileSync } from "node:fs";
+import { scoreTask, summarizeTasks, type TaskStatus } from "./task-scoring";
 
 try {
   process.loadEnvFile();
@@ -59,52 +62,78 @@ const tasks: Task[] = [
   },
 ];
 
-const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ");
-
 async function main() {
-  const rows: any[] = [];
+  const startedAt = new Date().toISOString();
+  const model = process.env.PIXELPI_MODEL || "claude-sonnet-4-6";
+  const outIndex = process.argv.indexOf("--out");
+  const out = outIndex < 0 ? undefined : process.argv[outIndex + 1];
+  if (outIndex >= 0 && (!out || out.startsWith("--"))) throw new Error("--out requires a JSON file path");
+  const rows: Array<{ id: string; status: TaskStatus; stopReason?: AgentStopReason; steps: number;
+    inTok: number; outTok: number; ms: number; truth: string[]; answer: string; err: string }> = [];
   let totIn = 0,
     totOut = 0;
+  let fatalError = "";
   for (const t of tasks) {
-    const truth = await t.truth().catch(() => ["<truth fetch failed>"]);
+    if (fatalError) {
+      rows.push({ id: t.id, status: "not_run", steps: 0, inTok: 0, outTok: 0, ms: 0, truth: [], answer: "", err: fatalError });
+      continue;
+    }
+    let truth: string[];
+    try {
+      truth = await t.truth();
+      if (!truth.length || truth.some((value) => !value?.trim())) throw new Error("Empty ground truth");
+    } catch (e) {
+      rows.push({ id: t.id, status: "unscored", steps: 0, inTok: 0, outTok: 0, ms: 0, truth: [], answer: "", err: String(e) });
+      continue;
+    }
     const t0 = Date.now();
-    const session = await createBrowserAgentSession({ task: t.task, launch: { headless: true }, maxSteps: 14 });
+    let session: Awaited<ReturnType<typeof createBrowserAgentSession>> | undefined;
+    let stopReason: AgentStopReason = "error";
     let answer = "",
       steps = 0,
       inTok = 0,
       outTok = 0,
       err = "";
     try {
+      session = await createBrowserAgentSession({ task: t.task, launch: { headless: true }, maxSteps: 14, maxTotalTokens: 100000, store: new MemoryStore() });
       const res = await session.run();
+      stopReason = res.stopReason;
       answer = res.finalText || "";
       steps = res.steps;
       inTok = res.usage.inputTokens;
       outTok = res.usage.outputTokens;
+      if (stopReason === "error" || stopReason === "aborted") err = answer;
     } catch (e) {
-      err = (e as Error).message.slice(0, 60);
+      err = (e as Error).message;
     } finally {
-      await session.close();
+      await session?.close();
     }
-    const pass = !err && truth.some((g) => norm(answer).includes(norm(g)));
+    const status = scoreTask(stopReason, answer, truth);
     totIn += inTok;
     totOut += outTok;
-    rows.push({ id: t.id, pass, steps, inTok, outTok, ms: Date.now() - t0, truth: truth[0], answer: answer.replace(/\s+/g, " ").slice(0, 90), err });
-    process.stderr.write(`${pass ? "PASS" : "FAIL"}  ${t.id}  (${steps} steps, ${inTok}+${outTok} tok)\n`);
+    rows.push({ id: t.id, status, stopReason, steps, inTok, outTok, ms: Date.now() - t0, truth, answer, err });
+    process.stderr.write(`${status.toUpperCase()}  ${t.id}  (${steps} steps, ${inTok}+${outTok} tok)${err ? ` ${err}` : ""}\n`);
+    if (err && /API key|HTTP (401|403|404|429)/i.test(err)) fatalError = err;
   }
 
-  const passed = rows.filter((r) => r.pass).length;
+  const summary = summarizeTasks(rows);
   console.log("\n| Task | result | steps | in tok | out tok | answer (truncated) |");
   console.log("|---|---|---|---|---|---|");
   for (const r of rows)
-    console.log(`| ${r.id} | ${r.pass ? "✅" : r.err ? "⚠️ " + r.err : "❌"} | ${r.steps} | ${r.inTok} | ${r.outTok} | ${r.answer} |`);
+    console.log(`| ${r.id} | ${r.status} | ${r.steps} | ${r.inTok} | ${r.outTok} | ${(r.err || r.answer).replace(/\s+/g, " ").replace(/\|/g, "\\|").slice(0, 120)} |`);
 
-  const cost = (totIn / 1e6) * IN_PER_M + (totOut / 1e6) * OUT_PER_M;
+  const cost = model === "claude-sonnet-4-6" ? (totIn / 1e6) * IN_PER_M + (totOut / 1e6) * OUT_PER_M : null;
   console.log(
-    `\nSuccess: ${passed}/${rows.length} (${Math.round((100 * passed) / rows.length)}%) · ` +
+    `\nSuccess: ${summary.successRate === null ? "N/A — incomplete or invalid run" : `${summary.passed}/${summary.total} (${Math.round(100 * summary.successRate)}%)`} · ` +
+      `${summary.evaluated}/${summary.total} tasks evaluated · ` +
       `total ${totIn} in / ${totOut} out tokens · ` +
-      `≈ $${cost.toFixed(3)} total, $${(cost / rows.length).toFixed(3)}/task ` +
-      `(est. at Sonnet $${IN_PER_M}/$${OUT_PER_M} per Mtok). Bot-accessible sites only.`,
+      (summary.successRate !== null && cost !== null ? `≈ $${cost.toFixed(3)} total, $${(cost / rows.length).toFixed(3)}/task ` : "No completed-suite cost estimate. ") +
+      `Model: ${model}. This five-task retrieval pilot is NOT Pomerado's enterprise benchmark.`,
   );
+  if (out) writeFileSync(out, JSON.stringify({ startedAt, model, suite: "pixelpi-five-retrieval-task-pilot", summary,
+    usage: { inputTokens: totIn, outputTokens: totOut }, estimatedObservedTokenCostUsd: cost, rows }, null, 2) + "\n");
+  if (summary.successRate === null) process.exitCode = 2;
+  else if (summary.passed !== summary.total) process.exitCode = 1;
 }
 
 main().catch((e) => {

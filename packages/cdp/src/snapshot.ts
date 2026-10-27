@@ -61,10 +61,17 @@ const TABLE_ROLES = new Set(["cell", "columnheader", "rowheader", "gridcell"]);
 /** A name carries information only if it has a letter or a digit somewhere. */
 const HAS_CONTENT = /[\p{L}\p{N}]/u;
 
-const normalizeName = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+const normalizeName = (s: string) =>
+  s.trim().replace(/\s+/g, " ").toLowerCase();
 
 // AX property names that map to compact boolean state flags.
-const FLAG_PROPS = ["checked", "disabled", "focused", "expanded", "selected"] as const;
+const FLAG_PROPS = [
+  "checked",
+  "disabled",
+  "focused",
+  "expanded",
+  "selected",
+] as const;
 
 function strValue(v?: AXValue): string {
   if (!v || v.value == null) return "";
@@ -115,7 +122,10 @@ export interface CompactionResult {
  */
 export function compactAxTree(nodes: AXNode[]): CompactionResult {
   const refs: Ref[] = [];
-  const refMap = new Map<number, { backendDOMNodeId: number; role: string; name: string }>();
+  const refMap = new Map<
+    number,
+    { backendDOMNodeId: number; role: string; name: string }
+  >();
   const seen = new Set<string>();
   let counter = 0;
 
@@ -152,7 +162,10 @@ export function renderRefs(refs: Ref[]): string {
   return refs
     .map((r) => {
       const namePart = r.name ? ` "${r.name}"` : "";
-      const statePart = r.state ? ` (${r.state})` : "";
+      const state = [r.frame ? `frame=${r.frame}` : "", r.state]
+        .filter(Boolean)
+        .join(" ");
+      const statePart = state ? ` (${state})` : "";
       return `[${r.ref}] ${r.role}${namePart}${statePart}`;
     })
     .join("\n");

@@ -1,0 +1,109 @@
+{
+  "recordedAt": "2026-10-26T12:51:54.195Z",
+  "suite": "local-hand-authored-replay-diagnostic",
+  "rows": [
+    {
+      "id": "fresh-extraction",
+      "expectation": "Fresh output matches independently known fixture heading",
+      "passed": true,
+      "ms": 542.247958,
+      "modelCalls": 0,
+      "result": {
+        "ok": true,
+        "steps": [
+          {
+            "i": 0,
+            "tool": "nav",
+            "label": "nav goto http://127.0.0.1:50728/",
+            "status": "ok"
+          },
+          {
+            "i": 1,
+            "tool": "eval",
+            "label": "eval",
+            "status": "ok"
+          }
+        ],
+        "recordedFinalText": "Old value from recording",
+        "verified": false,
+        "output": "Current value"
+      }
+    },
+    {
+      "id": "missing-selector",
+      "expectation": "Replay reports failure when the extraction tool errors",
+      "passed": true,
+      "ms": 400.87020799999993,
+      "modelCalls": 0,
+      "result": {
+        "ok": false,
+        "steps": [
+          {
+            "i": 0,
+            "tool": "nav",
+            "label": "nav goto http://127.0.0.1:50728/",
+            "status": "ok"
+          },
+          {
+            "i": 1,
+            "tool": "eval",
+            "label": "eval",
+            "status": "error",
+            "detail": "eval: Error: Required heading missing\n    at <anonymous>:1:86"
+          }
+        ],
+        "recordedFinalText": "Old value from recording",
+        "verified": false,
+        "error": "eval: Error: Required heading missing\n    at <anonymous>:1:86"
+      }
+    },
+    {
+      "id": "nav-only-freshness",
+      "expectation": "Navigation-only execution must not present recorded prose as fresh extraction or a verified outcome",
+      "passed": true,
+      "ms": 392.4658330000002,
+      "modelCalls": 0,
+      "result": {
+        "ok": true,
+        "steps": [
+          {
+            "i": 0,
+            "tool": "nav",
+            "label": "nav goto http://127.0.0.1:50728/",
+            "status": "ok"
+          }
+        ],
+        "recordedFinalText": "Old value from recording",
+        "verified": false
+      }
+    },
+    {
+      "id": "required-output",
+      "expectation": "Missing explicitly required output must fail",
+      "passed": true,
+      "ms": 384.3605839999998,
+      "modelCalls": 0,
+      "result": {
+        "ok": false,
+        "steps": [
+          {
+            "i": 0,
+            "tool": "nav",
+            "label": "nav goto http://127.0.0.1:50728/",
+            "status": "ok"
+          },
+          {
+            "i": 0,
+            "tool": "nav",
+            "label": "nav goto http://127.0.0.1:50728/",
+            "status": "error",
+            "detail": "Required replay output is missing"
+          }
+        ],
+        "recordedFinalText": "Old value from recording",
+        "verified": false,
+        "error": "Required replay output is missing"
+      }
+    }
+  ]
+}

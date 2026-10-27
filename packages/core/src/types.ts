@@ -19,6 +19,7 @@ export interface ToolResult {
   /** Text returned to the model as the tool_result. Keep it a DELTA, not the whole page. */
   content: string;
   isError?: boolean;
+  images?: { data: string; mimeType: string }[];
   /** Optional structured payload for observability/log rendering (e.g. the snapshot shown). */
   observation?: unknown;
 }

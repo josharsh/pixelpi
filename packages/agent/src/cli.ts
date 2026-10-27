@@ -777,13 +777,14 @@ async function main(): Promise<void> {
       });
       const ms = Date.now() - t0;
       if (flags.json) {
-        stdout.write(JSON.stringify({ type: "result", ok: result.ok, drift: result.drift, ms }) + "\n");
+        stdout.write(JSON.stringify({ type: "result", ok: result.ok, drift: result.drift, error: result.error, output: result.output, verified: result.verified, ms }) + "\n");
       } else if (result.ok) {
         stdout.write(`done in ${(ms / 1000).toFixed(1)}s - 0 tokens\n`);
       } else if (result.drift) {
         stdout.write(`drift at step ${result.drift.step}: ${result.drift.reason}\n`);
       }
-      process.exitCode = result.ok ? 0 : 3;
+      if (result.error && !flags.json) stderr.write(`replay failed: ${result.error}\n`);
+      process.exitCode = result.ok ? 0 : result.drift ? 3 : 1;
     } catch (err) {
       if (err instanceof Error && (err.name === "AbortError" || err.name === "APIUserAbortError")) {
         fail(flags.json, "aborted", "cancelled", 130);

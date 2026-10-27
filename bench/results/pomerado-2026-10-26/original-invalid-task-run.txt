@@ -1,0 +1,17 @@
+INVALID CAPABILITY SCORE: all tasks hit HTTP 401 before any model response. Retained as evidence of the old runner reporting setup errors as 0/5. See live-tasks.json for corrected classification.
+
+FAIL  example.com heading  (1 steps, 0+0 tok)
+FAIL  HN #1 title  (1 steps, 0+0 tok)
+FAIL  Wikipedia: Eiffel Tower completed  (1 steps, 0+0 tok)
+FAIL  Wikipedia: Apollo 11 year  (1 steps, 0+0 tok)
+FAIL  GitHub: cli/cli latest release  (1 steps, 0+0 tok)
+
+| Task | result | steps | in tok | out tok | answer (truncated) |
+|---|---|---|---|---|---|
+| example.com heading | ❌ | 1 | 0 | 0 | [anthropic] API key was rejected (HTTP 401). Check ANTHROPIC_API_KEY in your .env — it may |
+| HN #1 title | ❌ | 1 | 0 | 0 | [anthropic] API key was rejected (HTTP 401). Check ANTHROPIC_API_KEY in your .env — it may |
+| Wikipedia: Eiffel Tower completed | ❌ | 1 | 0 | 0 | [anthropic] API key was rejected (HTTP 401). Check ANTHROPIC_API_KEY in your .env — it may |
+| Wikipedia: Apollo 11 year | ❌ | 1 | 0 | 0 | [anthropic] API key was rejected (HTTP 401). Check ANTHROPIC_API_KEY in your .env — it may |
+| GitHub: cli/cli latest release | ❌ | 1 | 0 | 0 | [anthropic] API key was rejected (HTTP 401). Check ANTHROPIC_API_KEY in your .env — it may |
+
+Success: 0/5 (0%) · total 0 in / 0 out tokens · ≈ $0.000 total, $0.000/task (est. at Sonnet $3/$15 per Mtok). Bot-accessible sites only.

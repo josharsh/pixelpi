@@ -22,7 +22,12 @@ function ordinalOf(refs: Ref[], ref: Ref): number {
   let ordinal = 0;
   for (const r of refs) {
     if (r.ref === ref.ref) break;
-    if (r.role === ref.role && r.name === ref.name) ordinal++;
+    if (
+      r.role === ref.role &&
+      r.name === ref.name &&
+      (r.frame ?? "") === (ref.frame ?? "")
+    )
+      ordinal++;
   }
   return ordinal;
 }
@@ -31,7 +36,12 @@ function ordinalOf(refs: Ref[], ref: Ref): number {
 function targetFromRef(seenRefs: Ref[], refNum: number): Target | undefined {
   const hit = seenRefs.find((r) => r.ref === refNum);
   if (!hit) return undefined;
-  return { role: hit.role, name: hit.name, ordinal: ordinalOf(seenRefs, hit) };
+  return {
+    role: hit.role,
+    name: hit.name,
+    ordinal: ordinalOf(seenRefs, hit),
+    ...(hit.frame ? { frame: hit.frame } : {}),
+  };
 }
 
 // Matches the deterministic act note: `click "value" on [3] button "name"`.
@@ -52,6 +62,7 @@ export function createRecorder(): Recorder {
   // Pair tool_start inputs to tool_end results by toolUseId (results carry no input).
   const pendingInput = new Map<string, Record<string, unknown>>();
   let finalText = "";
+  const tabs = new Map<string, number>();
 
   function recordAct(input: Record<string, unknown>, content: string): void {
     const refNum = Number(input.ref);
@@ -63,7 +74,8 @@ export function createRecorder(): Recorder {
   }
 
   function recordFill(input: Record<string, unknown>): void {
-    const raw = (input.fields as { ref: number; value: string }[] | undefined) ?? [];
+    const raw =
+      (input.fields as { ref: number; value: string }[] | undefined) ?? [];
     const fields: { target: Target; value: string }[] = [];
     for (const f of raw) {
       const target = targetFromRef(seenRefs, Number(f.ref));
@@ -96,6 +108,11 @@ export function createRecorder(): Recorder {
       // Skip failed attempts entirely; the model's successful retry records separately.
       // Do NOT touch seenRefs - the retry needs the same ref context.
       if (e.result.isError) return;
+      const observed = e.result.observation as
+        | { targetId?: string }
+        | undefined;
+      if (observed?.targetId && !tabs.has(observed.targetId))
+        tabs.set(observed.targetId, tabs.size);
       if (e.name === "look") {
         const refs = refsOf(e.result.observation);
         if (refs) seenRefs = refs;
@@ -117,6 +134,10 @@ export function createRecorder(): Recorder {
             input: {
               action: String(input.action ?? "goto"),
               arg: typeof input.arg === "string" ? input.arg : undefined,
+              ...(["newtab", "switchtab"].includes(String(input.action)) &&
+              observed?.targetId
+                ? { tab: tabs.get(observed.targetId) }
+                : {}),
             },
           });
           break;
@@ -125,7 +146,9 @@ export function createRecorder(): Recorder {
             tool: "eval",
             input: {
               fn: String(input.fn ?? ""),
-              args: Array.isArray(input.args) ? (input.args as unknown[]) : undefined,
+              args: Array.isArray(input.args)
+                ? (input.args as unknown[])
+                : undefined,
               opts:
                 input.opts && typeof input.opts === "object"
                   ? (input.opts as Record<string, unknown>)
@@ -138,7 +161,11 @@ export function createRecorder(): Recorder {
           if (action === "set" || action === "delete") {
             steps.push({
               tool: "store",
-              input: { action, key: String(input.key ?? ""), value: input.value },
+              input: {
+                action,
+                key: String(input.key ?? ""),
+                value: input.value,
+              },
             });
           }
           break;

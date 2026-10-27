@@ -10,15 +10,22 @@ export interface Target {
   role: string;
   name: string;
   ordinal: number;
+  frame?: string;
 }
 
 /** One recorded step. Discriminated on "tool". look is never recorded. */
 export type TraceStep =
-  | { tool: "nav"; input: { action: string; arg?: string } }
+  | { tool: "nav"; input: { action: string; arg?: string; tab?: number } }
   | { tool: "act"; op: string; value?: string; target: Target; url?: string }
   | { tool: "fill"; fields: { target: Target; value: string }[]; url?: string }
-  | { tool: "eval"; input: { fn: string; args?: unknown[]; opts?: Record<string, unknown> } }
-  | { tool: "store"; input: { action: "set" | "delete"; key: string; value?: unknown } };
+  | {
+      tool: "eval";
+      input: { fn: string; args?: unknown[]; opts?: Record<string, unknown> };
+    }
+  | {
+      tool: "store";
+      input: { action: "set" | "delete"; key: string; value?: unknown };
+    };
 
 /** A named input to a parametrized trace. Set by templatizeFromExamples / the vars command. */
 export interface TraceParam {
@@ -30,6 +37,7 @@ export interface TraceParam {
 /** Where a run's per-row output comes from. eval -> a step's returned value; store -> a store key. */
 export interface OutputSpec {
   from: "eval" | "store" | "none";
+  required?: boolean;
   /** for from "eval": the step index whose returned value is the output. */
   step?: number;
   /** for from "store": the store key read at the end of the row. */
@@ -42,6 +50,12 @@ export interface Trace {
   model: string;
   createdAt: string;
   steps: TraceStep[];
+  assertions?: {
+    name?: string;
+    fn: string;
+    args?: unknown[];
+    equals: unknown;
+  }[];
   params?: TraceParam[];
   /** Explicit output source. Absent on old traces; defaultOutput() computes it on the fly. */
   output?: OutputSpec;
@@ -64,7 +78,9 @@ const TRACES_DIR = join(homedir(), ".pixelpi", "traces");
 
 /** A bare name has no path separator and does not end in ".json"; anything else is a literal path. */
 function isBareName(nameOrPath: string): boolean {
-  return !nameOrPath.includes("/") && !nameOrPath.toLowerCase().endsWith(".json");
+  return (
+    !nameOrPath.includes("/") && !nameOrPath.toLowerCase().endsWith(".json")
+  );
 }
 
 /** lowercase, hyphenate, strip junk, collapse and trim hyphens, cap at ~60 chars. */
@@ -83,11 +99,16 @@ export function slugify(task: string): string {
  * Resolve a name or path to an absolute trace file path.
  * Bare name -> ~/.pixelpi/traces/<name>.trace.json. Path-like -> cwd-relative or absolute as given.
  */
-export function resolveTracePath(nameOrPath: string, _opts?: { forWrite?: boolean }): string {
+export function resolveTracePath(
+  nameOrPath: string,
+  _opts?: { forWrite?: boolean },
+): string {
   if (isBareName(nameOrPath)) {
     return join(TRACES_DIR, `${nameOrPath}.trace.json`);
   }
-  return isAbsolute(nameOrPath) ? nameOrPath : resolve(process.cwd(), nameOrPath);
+  return isAbsolute(nameOrPath)
+    ? nameOrPath
+    : resolve(process.cwd(), nameOrPath);
 }
 
 export function loadTrace(path: string): Trace {
@@ -108,7 +129,9 @@ export function loadTrace(path: string): Trace {
     throw new Error(`invalid trace (missing steps): ${path}`);
   }
   if (trace.version !== VERSION) {
-    throw new Error(`unsupported trace version ${trace.version} (expected ${VERSION}): ${path}`);
+    throw new Error(
+      `unsupported trace version ${trace.version} (expected ${VERSION}): ${path}`,
+    );
   }
   return trace;
 }
