@@ -11,6 +11,19 @@ packages version independently and are only listed when they changed.
 
 ## [Unreleased]
 
+### Fixed
+
+- Browser actions replace and verify existing field values, wait for actionable
+  targets, and handle iframe and tab navigation. MCP now returns screenshots as
+  images and honors cancellation.
+- Replay stops on tool errors, supports output checks, and keeps recorded prose
+  separate from current results. Recording a new tab now preserves the original
+  tab identity even when no earlier tab observation was recorded.
+
+### Added
+
+- Real-Chrome regression tests and an independently graded Playwright comparison.
+
 ## [0.6.1] — 2026-08-11
 
 ### Fixed
